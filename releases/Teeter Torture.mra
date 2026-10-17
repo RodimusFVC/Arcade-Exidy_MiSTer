@@ -1,0 +1,77 @@
+<misterromdescription>
+    <name>Teeter Torture</name>
+    <region>World</region>
+    <homebrew>no</homebrew>
+    <bootleg>no</bootleg>
+    <version></version>
+    <alternative></alternative>
+    <platform></platform>
+    <series>Teeter Torture</series>
+    <year>1982</year>
+    <manufacturer>Exidy</manufacturer>
+    <category>Shooter</category>
+
+    <setname>teetert</setname>
+    <parent>teetert</parent>
+    <mameversion>0289</mameversion>
+    <rbf>Exidy</rbf>
+    <about></about>
+
+    <resolution>15kHz</resolution>
+    <rotation>horizontal</rotation>
+    <flip>yes</flip>
+
+    <players>2 (alternating)</players>
+    <joystick>8-way</joystick>
+    <special_controls></special_controls>
+    <num_buttons>1</num_buttons>
+    <buttons names="Fire,Not Used,Not Used,Not Used,Coin,Start 1P,Start 2P,Pause,Not Used,Not Used,Not Used" default="A,B,X,Y,Select,Start,R,L"/>
+
+    <switches default="5F">
+        <dip name="Bonus Life" bits="0,1" ids="20000,30000,40000,50000" values="3,2,1,0"/>
+        <dip name="Coinage" bits="2,4" ids="2C/1C,Pence: A 2C/1C B 1C/3C,1C/1C,Pence: A 1C/1C B 1C/4C,Pence: A 1C/1C B 1C/5C,1C/2C,1C/3C; 2C/7C,1C/4C" values="6,0,7,2,3,5,1,4"/>
+        <dip name="Lives" bits="5,6" ids="5,4,3,2"/>
+    </switches>
+
+    <!-- Index 0: MAME regions, layout in rtl/exidy_board.sv -->
+    <rom index="0" md5="none" zip="teetert.zip">
+        <part crc="f4e4d991" name="13a-cpu"/>
+        <part crc="c6d8cb04" name="12a-cpu"/>
+        <part crc="bac9b259" name="11a-cpu"/>
+        <part crc="3ae7e445" name="10a-cpu"/>
+        <part crc="0cba424d" name="9a-cpu"/>
+        <part crc="68de66e7" name="8a-cpu"/>
+        <part crc="84491333" name="7a-cpu"/>
+        <part crc="3600d465" name="6a-cpu"/>
+        <part repeat="0x5800">00</part>
+        <part crc="83b8836f" name="3a-ac"/>
+        <part crc="5154c39e" name="4a-ac"/>
+        <part crc="1e1e3916" name="5a-ac"/>
+        <part crc="80f3357a" name="6a-ac"/>
+        <part crc="466addc7" name="7a-ac"/>
+        <part repeat="0x4000">00</part>
+        <part crc="0fe70b00" name="11d-cpu"/>
+        <part crc="f76b4fcf" name="tt14h.123"/>
+        <part crc="43b35bb7" name="tt5c.129"/>
+        <part crc="e26f9053" name="tt6d.123"/>
+    </rom>
+
+    <!-- Index 1: board variant, flags, board config, input map (see Arcade-Exidy.sv) -->
+    <rom index="1">
+        <part>
+            03 04 00 0B BB DE FF 80 FF FC FF FF 80 00 80 80
+            80 80 80 80 13 14 00 00 05 00 00 11 12 00 00 00
+            00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+            00 00 00 00 00 00 00 00 00 00 00 00 11 12 00 00
+            00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+            00 00 00 00 00 01 02 03 04 05 06 07 07 00 01 02
+            03 05 06 04 00 01 02 03 04 05 06 07 00 01 02 03
+            04 05 06 07 00 01 02 03 04 05 06 07 00 01 02 03
+            04 05 06 07 00 01 02 03 04 05 06 07 00 01 02 03
+            04 05 06 07 00 00 00
+        </part>
+    </rom>
+
+    <remark>Teeter Torture (Prototype) (Exidy)</remark>
+    <mratimestamp>20261016000000</mratimestamp>
+</misterromdescription>

@@ -19,6 +19,14 @@
 //    [5] Pepper II map: 2bpp characters, character RAM 6000-6FFF (plane 0 6000, plane 1 6800)
 //    [6] Fax map: work RAM 0000-07FF, IN4 at 1A00, IN3 at 1C00, question ROM bank latch (write 2000), bank 2000-3FFF
 //
+//  cfg2 (MRA index 1 byte 2), gen-1 boards (Targ / Spectar generation):
+//    [0] program ROM also at 0800-3FFF          [1] (board top) FF00-FFFF reads ROM 3F00-3FFF
+//    [2] image EPROM A10 / A9 grounded (one 2708 for both objects, no bank bits)
+//    [3] Rallys bootleg object registers: 5000 / 5001 MO1 H / V, 5300 / 5301 MO2 H / V
+//    [4] 5103 coin bits active low (Rallys bootlegs)
+//    [5] character generator is ROM (Side Trak): CPU writes ignored, contents preloaded from ioctl 0x15000
+//  Colour latches start from col_init (gen-1 boards set colours with DIP shunts, MAME init_*)
+//
 //  Pixel timing: clk = 4 x pixel. ph 0 = addresses out, ph 1 = screen code / MO1 image, ph 2 = character
 //  pattern / MO2 image, ph 3 = mix; the colour index is registered at ce_pix, one pixel behind (pix_x, pix_y).
 //
@@ -31,6 +39,12 @@ module exidy_main
     input  logic  [1:0] ph,             // phase within the pixel, ce_pix ends phase 3
     input  logic        ce_pix,
     input  logic  [7:0] cfg,
+    input  logic  [7:0] cfg2,
+    input  logic [23:0] col_init,       // {R, G, B} colour latches at reset
+
+    input  logic [24:0] ioctl_addr,     // character ROM preload (Side Trak)
+    input  logic  [7:0] ioctl_dout,
+    input  logic        ioctl_wr0,
 
     // main 6502 (owned by exidy_board)
     input  logic        cpu_ce,
@@ -80,6 +94,8 @@ localparam [7:0] MO_HOFS = 8'd8;        // MAME sx = 232 - P; the counter window
 
 wire pepper = cfg[5];
 wire fax    = cfg[6];
+wire gen1   = cfg2[0];
+wire rallys = cfg2[3];
 
 /////////////////////////////  Raster counters  /////////////////////////////
 
@@ -105,10 +121,10 @@ wire sel_qrom  = fax & (cpu_a[15:13] == 3'b001);                       // 2000-3
 wire sel_vram  = (cpu_a[15:11] == 5'b01000);                           // 4000-43FF, mirror 4400
 wire sel_cram  = pepper ? (cpu_a[15:12] == 4'h6)                       // 6000-6FFF
                         : (cpu_a[15:11] == 5'b01001);                  // 4800-4FFF
-wire sel_mo    = (cpu_a[15:8] == 8'h50);
+wire sel_mo    = (cpu_a[15:8] == 8'h50) | (rallys & (cpu_a[15:8] == 8'h53));
 wire sel_io    = (cpu_a[15:8] == 8'h51);
 wire sel_ab    = (cpu_a[15:8] == 8'h52);
-wire sel_rom   = cpu_a[15];
+wire sel_rom   = cpu_a[15] | (gen1 & (cpu_a[15:14] == 2'b00) & (cpu_a[13:11] != 3'd0));   // 8000-FFFF (+ 0800-3FFF)
 
 assign pia_cs = sel_ab & ~cpu_a[4];
 wire   sel_col = sel_ab &  cpu_a[4];                                   // A2-A0: 0 blue, 1 green, 2 red, 3 IN2
@@ -136,9 +152,11 @@ dpram_dc #(.widthad_a(10)) screen_ram
 
 // character RAM: 2K plane 0 (1bpp boards: the whole 4800-4FFF); Pepper II plane 1 at 6800-6FFF
 wire cram_cpu_p1 = pepper & cpu_a[11];
+wire cram_load   = ioctl_wr0 && ioctl_addr[24:11] == 14'h2A;  // index 0 0x15000-0x157FF (CPU is in reset)
 dpram_dc #(.widthad_a(11)) char_ram0
 (
-    .clock_a(clk), .address_a(cpu_a[10:0]), .data_a(cpu_do), .wren_a(wr & sel_cram & ~cram_cpu_p1), .q_a(cram_q_cpu),
+    .clock_a(clk), .address_a(cram_load ? ioctl_addr[10:0] : cpu_a[10:0]), .data_a(cram_load ? ioctl_dout : cpu_do),
+    .wren_a(cram_load | (wr & sel_cram & ~cram_cpu_p1 & ~cfg2[5])), .q_a(cram_q_cpu),
     .clock_b(clk), .address_b(cram_va), .data_b(8'd0), .wren_b(1'b0), .q_b(cram_q)
 );
 
@@ -158,26 +176,30 @@ logic [7:0] col_r = 8'd0, col_g = 8'd0, col_b = 8'd0;
 logic [4:0] qbank = 5'd0;                                        // Fax question ROM bank
 
 wire mo_wr = wr & sel_mo;
+wire [1:0] mo_reg = rallys ? {cpu_a[8], cpu_a[0]} : cpu_a[7:6];   // 0 MO1 H, 1 MO1 V, 2 MO2 H, 3 MO2 V
 always_ff @(posedge clk) begin
     if (reset) qbank <= 5'd0;
     else if (wr & sel_qrom) qbank <= cpu_do[4:0];
     if (wr & sel_io & (cpu_a[1:0] == 2'd0)) mo_img <= cpu_do;
     if (wr & sel_io & (cpu_a[1:0] == 2'd1)) ocl    <= cpu_do;
-    if (wr & sel_col & (cpu_a[2:0] == 3'd0)) col_b <= cpu_do;
-    if (wr & sel_col & (cpu_a[2:0] == 3'd1)) col_g <= cpu_do;
-    if (wr & sel_col & (cpu_a[2:0] == 3'd2)) col_r <= cpu_do;
+    if (reset) {col_r, col_g, col_b} <= col_init;
+    else begin
+        if (wr & sel_col & (cpu_a[2:0] == 3'd0)) col_b <= cpu_do;
+        if (wr & sel_col & (cpu_a[2:0] == 3'd1)) col_g <= cpu_do;
+        if (wr & sel_col & (cpu_a[2:0] == 3'd2)) col_r <= cpu_do;
+    end
 end
 
 // H counters count each visible pixel, V counters once per visible line (CBLB rising = end of the line)
 wire v_step = ce_pix && v_vis && (hcnt == 9'd255);
 always_ff @(posedge clk) begin
-    if (mo_wr && cpu_a[7:6] == 2'd0) mo1h <= cpu_do;
-    else if (ce_pix && vis)          mo1h <= mo1h + 8'd1;
-    if (mo_wr && cpu_a[7:6] == 2'd1) mo1v <= cpu_do;
-    else if (v_step)                 mo1v <= mo1v + 8'd1;
-    if (mo_wr && cpu_a[7:6] == 2'd2) mo2h <= cpu_do;
-    else if (ce_pix && vis)          mo2h <= mo2h + 8'd1;
-    if (mo_wr && cpu_a[7:6] == 2'd3) mo2v <= cpu_do;
+    if (mo_wr && mo_reg == 2'd0) mo1h <= cpu_do;
+    else if (ce_pix && vis)      mo1h <= mo1h + 8'd1;
+    if (mo_wr && mo_reg == 2'd1) mo1v <= cpu_do;
+    else if (v_step)             mo1v <= mo1v + 8'd1;
+    if (mo_wr && mo_reg == 2'd2) mo2h <= cpu_do;
+    else if (ce_pix && vis)      mo2h <= mo2h + 8'd1;
+    if (mo_wr && mo_reg == 2'd3) mo2v <= cpu_do;
     else if (v_step)                 mo2v <= mo2v + 8'd1;
 end
 
@@ -199,8 +221,8 @@ logic       m1win_q, m2win_q, vis_q;
 always_comb begin
     cram_va = {vram_q, vcnt[2:0]};
     case (ph)
-        2'd0:    spr_a = {1'b0, ocl[5], mo_img[3:0], m1hx[3], mo1v[3:0]};
-        default: spr_a = {1'b1, ocl[6], mo_img[7:4], m2hx[3], mo2v[3:0]};
+        2'd0:    spr_a = {1'b0, ocl[5] & ~cfg2[2], mo_img[3:0], m1hx[3], mo1v[3:0]};
+        default: spr_a = {~cfg2[2], ocl[6] & ~cfg2[2], mo_img[7:4], m2hx[3], mo2v[3:0]};
     endcase
 end
 
@@ -272,7 +294,7 @@ always_ff @(posedge clk) begin
 
     // 8E latches on the flip-flop's rising edge
     if (!irq_q && (coint || (!eir && (vl1 || coin_ev || (ce_pix && coll)))))   // DIAG-REVERT-2026-10-16: was (vl1 || (ce_pix && coll))
-        cond <= {~in_vbl, coin1, coin2,
+        cond <= {~in_vbl, coin1 ^ cfg2[4], coin2 ^ cfg2[4],
                  cfg[4] ? c_m1m2 : 1'b1,
                  intsrc[3],
                  cfg[3] ? ~m1_on : c_m1ch,

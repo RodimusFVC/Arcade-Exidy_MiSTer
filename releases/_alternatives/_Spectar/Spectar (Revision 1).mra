@@ -1,0 +1,75 @@
+<misterromdescription>
+    <name>Spectar (Revision 1?)</name>
+    <region>World</region>
+    <homebrew>no</homebrew>
+    <bootleg>no</bootleg>
+    <version></version>
+    <alternative></alternative>
+    <platform></platform>
+    <series>Spectar</series>
+    <year>1980</year>
+    <manufacturer>Exidy</manufacturer>
+    <category>Maze</category>
+
+    <setname>spectar1</setname>
+    <parent>spectar</parent>
+    <mameversion>0289</mameversion>
+    <rbf>Exidy</rbf>
+    <about></about>
+
+    <resolution>15kHz</resolution>
+    <rotation>horizontal</rotation>
+    <flip>yes</flip>
+
+    <players>2 (alternating)</players>
+    <joystick>4-way</joystick>
+    <special_controls></special_controls>
+    <num_buttons>1</num_buttons>
+    <buttons names="Fire,Not Used,Not Used,Not Used,Coin,Start 1P,Start 2P,Pause,Not Used,Not Used,Not Used" default="A,B,X,Y,Select,Start,R,L"/>
+
+    <switches default="E4,80">
+        <dip name="Pence Coinage" bits="0" ids="10P/1P; 50P Coin/6P,2x10P/1P; 50P Coin/3P"/>
+        <dip name="Top Score Award" bits="1" ids="Credit,Extended Play"/>
+        <dip name="Quarter Coinage" bits="2,3" ids="2C/1C,1C/1C,1C/1C (no display),1C/2C" values="2,1,0,3"/>
+        <dip name="Lives" bits="4,5" ids="2,3,4,5" values="3,2,1,0"/>
+        <dip name="Currency" bits="6" ids="Quarters,Pence" values="1,0"/>
+        <dip name="Language" bits="8,9" ids="English,French,German,Spanish"/>
+    </switches>
+
+    <!-- Index 0: MAME regions, layout in rtl/exidy_board.sv -->
+    <rom index="0" md5="none" zip="spectar1.zip|spectar.zip">
+        <part repeat="0x800">00</part>
+        <part crc="7002efb4" name="spl12a-1.12a"/>
+        <part crc="8eb8526a" name="spl11a-1.11a"/>
+        <part crc="9d169b3d" name="spl10a-1.10a"/>
+        <part crc="40e3eba1" name="spl9a-1.9a"/>
+        <part crc="64d8eb84" name="spl8a-1.8a"/>
+        <part crc="e08b0d8d" name="spl7a-1.7a"/>
+        <part crc="f0e4e71a" name="spl6a-1.6a"/>
+        <part repeat="0x10000">00</part>
+        <part crc="c55b645d" name="hrl11d-2.11d" offset="0x400" length="0x400"/>
+        <part repeat="0x400">00</part>
+        <part crc="9ca2e061" name="spl5c-2.5c"/>
+        <part crc="e26f9053" name="hrl6d-1.6d"/>
+        <part crc="f76b4fcf" name="hrl14h-1.14h"/>
+    </rom>
+
+    <!-- Index 1: board variant, flags, board config, input map (see Arcade-Exidy.sv) -->
+    <rom index="1">
+        <part>
+            06 05 07 08 FF C9 FF 80 FF FC FF FF 80 00 80 01
+            80 80 80 80 13 14 04 03 05 01 02 11 12 00 00 00
+            00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+            00 00 00 00 00 00 00 00 00 00 00 00 11 12 00 00
+            00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+            00 00 00 00 00 01 02 03 04 05 06 07 07 00 01 02
+            03 04 05 06 00 01 02 03 04 05 06 07 00 01 02 03
+            04 05 06 07 00 01 02 03 04 05 06 07 00 01 02 03
+            04 05 06 07 00 01 02 03 04 05 06 07 00 01 02 03
+            04 05 06 07 DA EE 61
+        </part>
+    </rom>
+
+    <remark>Spectar (Revision 1?) (Exidy)</remark>
+    <mratimestamp>20261016000000</mratimestamp>
+</misterromdescription>

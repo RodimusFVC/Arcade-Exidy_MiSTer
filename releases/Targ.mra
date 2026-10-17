@@ -1,0 +1,74 @@
+<misterromdescription>
+    <name>Targ</name>
+    <region>World</region>
+    <homebrew>no</homebrew>
+    <bootleg>no</bootleg>
+    <version></version>
+    <alternative></alternative>
+    <platform></platform>
+    <series>Targ</series>
+    <year>1980</year>
+    <manufacturer>Exidy</manufacturer>
+    <category>Maze</category>
+
+    <setname>targ</setname>
+    <parent>targ</parent>
+    <mameversion>0289</mameversion>
+    <rbf>Exidy</rbf>
+    <about></about>
+
+    <resolution>15kHz</resolution>
+    <rotation>horizontal</rotation>
+    <flip>yes</flip>
+
+    <players>2 (alternating)</players>
+    <joystick>4-way</joystick>
+    <special_controls></special_controls>
+    <num_buttons>1</num_buttons>
+    <buttons names="Fire,Not Used,Not Used,Not Used,Coin,Start 1P,Start 2P,Pause,Not Used,Not Used,Not Used" default="A,B,X,Y,Select,Start,R,L"/>
+
+    <switches default="E4">
+        <dip name="Pence Coinage" bits="0" ids="10P/1P; 50P Coin/6P,2x10P/1P; 50P Coin/3P"/>
+        <dip name="Top Score Award" bits="1" ids="Credit,Extended Play"/>
+        <dip name="Quarter Coinage" bits="2,3" ids="2C/1C,1C/1C,1C/1C (no display),1C/2C" values="2,1,0,3"/>
+        <dip name="Lives" bits="4,5" ids="2,3,4,5" values="3,2,1,0"/>
+        <dip name="Currency" bits="6" ids="Quarters,Pence" values="1,0"/>
+    </switches>
+
+    <!-- Index 0: MAME regions, layout in rtl/exidy_board.sv -->
+    <rom index="0" md5="none" zip="targ.zip">
+        <part repeat="0x1800">00</part>
+        <part crc="969744e1" name="hrl_10a1.10a"/>
+        <part crc="a177a72d" name="hrl_9a1.9a"/>
+        <part crc="6e6928a5" name="hrl_8a1.8a"/>
+        <part crc="e2f37f93" name="hrl_7a4.7a"/>
+        <part crc="a60a1bfc" name="hrl_6a3.6a"/>
+        <part repeat="0x10000">00</part>
+        <part crc="9f03513e" name="hrl_11d-1.11d"/>
+        <part repeat="0x400">00</part>
+        <part crc="a24290d0" name="hrl_5c-1.5c"/>
+        <part crc="e26f9053" name="stl_6d-1.6d"/>
+        <part crc="f76b4fcf" name="hrl_14h-1.14h"/>
+        <part repeat="0xC0">00</part>
+        <part crc="38e8024b" name="hra2b-1"/>
+    </rom>
+
+    <!-- Index 1: board variant, flags, board config, input map (see Arcade-Exidy.sv) -->
+    <rom index="1">
+        <part>
+            05 05 07 08 FF C9 FF 80 FF FC FF FF 80 00 80 80
+            80 80 80 80 13 14 04 03 05 01 02 11 12 00 00 00
+            00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+            00 00 00 00 00 00 00 00 00 00 00 00 11 12 00 00
+            00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+            00 00 00 00 00 01 02 03 04 05 06 07 07 00 01 02
+            03 04 05 06 00 01 02 03 04 05 06 07 00 01 02 03
+            04 05 06 07 00 01 02 03 04 05 06 07 00 01 02 03
+            04 05 06 07 00 01 02 03 04 05 06 07 00 01 02 03
+            04 05 06 07 54 EE 6B
+        </part>
+    </rom>
+
+    <remark>Targ (Exidy)</remark>
+    <mratimestamp>20261016000000</mratimestamp>
+</misterromdescription>

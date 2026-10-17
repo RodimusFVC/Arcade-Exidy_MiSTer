@@ -1,0 +1,71 @@
+<misterromdescription>
+    <name>Phantom (Bootleg Of Spectar)</name>
+    <region>World</region>
+    <homebrew>no</homebrew>
+    <bootleg>yes</bootleg>
+    <version></version>
+    <alternative></alternative>
+    <platform></platform>
+    <series>Spectar</series>
+    <year>1980</year>
+    <manufacturer>bootleg (Proel)</manufacturer>
+    <category>Maze</category>
+
+    <setname>phantom</setname>
+    <parent>spectar</parent>
+    <mameversion>0289</mameversion>
+    <rbf>Exidy</rbf>
+    <about></about>
+
+    <resolution>15kHz</resolution>
+    <rotation>horizontal</rotation>
+    <flip>yes</flip>
+
+    <players>2 (alternating)</players>
+    <joystick>4-way</joystick>
+    <special_controls></special_controls>
+    <num_buttons>1</num_buttons>
+    <buttons names="Fire,Not Used,Not Used,Not Used,Coin,Start 1P,Start 2P,Pause,Not Used,Not Used,Not Used" default="A,B,X,Y,Select,Start,R,L"/>
+
+    <switches default="21">
+        <dip name="Top Score Award" bits="2" ids="Credit,Extended Play"/>
+        <dip name="Unknown" bits="3" ids="Off,On"/>
+        <dip name="Unknown" bits="4" ids="Off,On"/>
+        <dip name="Lives" bits="5,6" ids="2,3,4,5"/>
+        <dip name="Coin Mode" bits="7" ids="Mode 1,Mode 2"/>
+        <dip name="Coinage" bits="0,1" ids="2C/1C,1C/1C,1C/2C,1C/3C"/>
+    </switches>
+
+    <!-- Index 0: MAME regions, layout in rtl/exidy_board.sv -->
+    <rom index="0" md5="none" zip="phantom.zip|spectar.zip">
+        <part repeat="0x1000">00</part>
+        <part crc="c5af9d34" name="156_a2"/>
+        <part crc="30121e69" name="156_a3"/>
+        <part crc="02d7fb94" name="156_a4"/>
+        <part crc="0127bc8d" name="156_a5"/>
+        <part repeat="0x4800">00</part>
+        <part crc="a4e40b67" name="1a.bin"/>
+        <part repeat="0xC000">00</part>
+        <part crc="d18e5f14" name="156_d1"/>
+        <part crc="9fb1daee" name="156_pal"/>
+    </rom>
+
+    <!-- Index 1: board variant, flags, board config, input map (see Arcade-Exidy.sv) -->
+    <rom index="1">
+        <part>
+            06 05 19 08 FF 21 FF A0 FF FC FF FF 80 00 80 80
+            80 80 80 80 14 13 04 03 05 01 02 11 00 00 00 00
+            00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+            00 12 00 00 00 00 00 00 00 00 00 00 11 12 00 00
+            00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+            00 00 00 00 00 01 02 03 04 05 06 07 00 01 02 03
+            04 05 06 07 00 01 02 03 04 05 06 07 00 01 02 03
+            04 05 06 07 00 01 02 03 04 05 06 07 00 01 02 03
+            04 05 06 07 00 01 02 03 04 05 06 07 00 01 02 03
+            04 05 06 07 DA EE 61
+        </part>
+    </rom>
+
+    <remark>Phantom (Bootleg Of Spectar) (Proel Bootleg)</remark>
+    <mratimestamp>20261016000000</mratimestamp>
+</misterromdescription>

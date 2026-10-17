@@ -46,6 +46,8 @@ wire [24:0] ioctl_addr;
 wire  [7:0] ioctl_dout;
 wire [15:0] joystick_0, joystick_1;
 wire [15:0] joystick_r_analog_0, joystick_r_analog_1;   // right analog sticks: [15:8] Y, [7:0] X, signed
+wire  [8:0] spinner_0;
+wire [24:0] ps2_mouse;
 wire [21:0] gamma_bus;
 wire        direct_video;
 wire        video_rotated;
@@ -82,40 +84,44 @@ assign BUTTONS = 0;
 // MRA index 1:
 //   byte 0      board variant (see rtl/exidy_board.sv)
 //   byte 1      flags: [0] 4-way joystick, [2] coins are 2-frame pulses, [4] vertical, [7] vertical is ROT90
-//   byte 2      reserved
+//   byte 2      board config 2: gen-1 map options (see rtl/boards/exidy6502/exidy_main.sv)
 //   byte 3      board config (see rtl/boards/exidy6502/exidy_main.sv)
-//   bytes 4-9   idle level of every bit of the 6 ports (board order: IN0, DSW, IN2, INTSOURCE, -, COIN)
-//   bytes 10-15 per port: DIP switch byte that supplies it (bit 7 set = none, use the idle byte)
-//   bytes 16-63 input map, one byte per port bit (bit 0 first): control id, 0 = none; a pressed control inverts its bit
-//   bytes 64-111 per port bit: which bit of its DIP switch byte supplies it (MiSTer DIP fields must be contiguous;
+//   bytes 4-11  idle level of every bit of the 8 ports (board order: IN0, DSW, IN2, INTSOURCE, IN3, COIN, IN4, -)
+//   bytes 12-19 per port: DIP switch byte that supplies it (bit 7 set = none, use the idle byte)
+//   bytes 20-83 input map, one byte per port bit (bit 0 first): control id, 0 = none; a pressed control inverts its bit
+//   bytes 84-147 per port bit: which bit of its DIP switch byte supplies it (MiSTer DIP fields must be contiguous;
 //               Exidy Coinage is DSW bits 3, 4, 7)
+//   bytes 148-150 colour latches R, G, B at reset (gen-1 boards: colour DIP shunts)
 // Only DIP ports go in the MRA switch bytes: Main_MiSTer builds the default as int shifts, so a byte >= 0x80 at
 // position 3 sign-extends over bytes 4-7, and bytes 4+ are shifted by 32+ (mra_loader.cpp: binary[i] << (i * 8))
 reg [7:0] game_var    = 8'd0;
 reg [7:0] game_flags  = 8'h04;
-reg [3:0] rom_dec     = 4'd0;
+reg [7:0] game_cfg2   = 8'd0;
+reg [7:0] col_init[3] = '{8'd0, 8'd0, 8'd0};
 reg [7:0] game_flags2 = 8'h0B;
-reg [5:0] in_map[48];
-reg [7:0] port_idle[6] = '{8'hFF,8'hFF,8'hFF,8'hFF,8'hFF,8'h00};
-reg [7:0] port_dip[6]  = '{8'h80,8'h80,8'h80,8'h80,8'h80,8'h80};
-wire [5:0] map_idx  = ioctl_addr[5:0] - 6'd16;
-wire [2:0] idle_idx = ioctl_addr[2:0] - 3'd4;      // bytes 4-9  -> 0-5
-wire [3:0] dip_idx4 = ioctl_addr[3:0] - 4'd10;     // bytes 10-15 -> 0-5
-wire [2:0] dip_idx  = dip_idx4[2:0];
-reg  [2:0] dip_bit[48];
-wire [5:0] perm_idx = ioctl_addr[5:0];                 // bytes 64-111 -> 0-47
-initial for (int i = 0; i < 48; i++) dip_bit[i] = i % 8;
+reg [5:0] in_map[64];
+reg [7:0] port_idle[8] = '{8'hFF,8'hFF,8'hFF,8'hFF,8'hFF,8'h00,8'hFF,8'hFF};
+reg [7:0] port_dip[8]  = '{8'h80,8'h80,8'h80,8'h80,8'h80,8'h80,8'h80,8'h80};
+wire [7:0] map_idx8  = ioctl_addr[7:0] - 8'd20;    // bytes 20-83  -> 0-63
+wire [7:0] perm_idx8 = ioctl_addr[7:0] - 8'd84;    // bytes 84-147 -> 0-63
+wire [5:0] map_idx   = map_idx8[5:0];
+wire [5:0] perm_idx  = perm_idx8[5:0];
+wire [2:0] idle_idx  = ioctl_addr[2:0] - 3'd4;     // bytes 4-11  -> 0-7
+wire [2:0] dip_idx   = ioctl_addr[2:0] - 3'd4;     // bytes 12-19 -> 0-7
+reg  [2:0] dip_bit[64];
+initial for (int i = 0; i < 64; i++) dip_bit[i] = i % 8;
 
 always @(posedge CLK_SYS) begin
     if (ioctl_wr && ioctl_index == 8'd1) begin
-        if (ioctl_addr >= 25'd64 && ioctl_addr < 25'd112) dip_bit[perm_idx] <= ioctl_dout[2:0];
+        if (ioctl_addr >= 25'd84 && ioctl_addr < 25'd148) dip_bit[perm_idx] <= ioctl_dout[2:0];
         if (ioctl_addr == 25'd0) game_var   <= ioctl_dout;
         if (ioctl_addr == 25'd1) game_flags  <= ioctl_dout;
-        if (ioctl_addr == 25'd2) rom_dec     <= ioctl_dout[3:0];
+        if (ioctl_addr == 25'd2) game_cfg2   <= ioctl_dout;
+        if (ioctl_addr >= 25'd148 && ioctl_addr < 25'd151) col_init[ioctl_addr[1:0]] <= ioctl_dout;   // 148 -> 0
         if (ioctl_addr == 25'd3) game_flags2 <= ioctl_dout;
-        if (ioctl_addr >= 25'd4  && ioctl_addr < 25'd10) port_idle[idle_idx] <= ioctl_dout;
-        if (ioctl_addr >= 25'd10 && ioctl_addr < 25'd16) port_dip[dip_idx]   <= ioctl_dout;
-        if (ioctl_addr >= 25'd16 && ioctl_addr < 25'd64) in_map[map_idx] <= ioctl_dout[5:0];
+        if (ioctl_addr >= 25'd4  && ioctl_addr < 25'd12) port_idle[idle_idx] <= ioctl_dout;
+        if (ioctl_addr >= 25'd12 && ioctl_addr < 25'd20) port_dip[dip_idx]   <= ioctl_dout;
+        if (ioctl_addr >= 25'd20 && ioctl_addr < 25'd84) in_map[map_idx] <= ioctl_dout[5:0];
     end
 end
 
@@ -188,6 +194,8 @@ hps_io #(.CONF_STR(CONF_STR)) hps_io
 	.joystick_1(joystick_1),
 	.joystick_r_analog_0(joystick_r_analog_0),
 	.joystick_r_analog_1(joystick_r_analog_1),
+	.spinner_0(spinner_0),
+	.ps2_mouse(ps2_mouse),
 	.ps2_key(ps2_key)
 );
 
@@ -342,9 +350,9 @@ always @(posedge CLK_SYS) begin
 		dip_sw[ioctl_addr[2:0]] <= ioctl_dout;
 end
 
-reg [7:0] in_port[6];
+reg [7:0] in_port[8];
 always @(posedge CLK_SYS) begin
-	for (int p = 0; p < 6; p++)
+	for (int p = 0; p < 8; p++)
 		for (int b = 0; b < 8; b++)
 			in_port[p][b] <= (port_dip[p][7] ? port_idle[p][b] : dip_sw[port_dip[p][2:0]][dip_bit[p*8 + b]]) ^ ctl[in_map[p*8 + b]];
 end
@@ -388,6 +396,18 @@ arcade_video #(256,24) arcade_video
 
 ///////////////                 Board                  ////////////////
 
+// Teeter Torture dial: spinner, mouse X, P1 D-pad left / right
+wire [7:0] dial_pos;
+exidy_dial exidy_dial
+(
+	.clk(CLK_SYS),
+	.reset(reset),
+	.spinner(spinner_0),
+	.mouse(ps2_mouse),
+	.pad({dir1_raw[1], dir1_raw[0]}),
+	.pos(dial_pos)
+);
+
 exidy_board board
 (
 	.clk(CLK_SYS),
@@ -395,6 +415,8 @@ exidy_board board
 	.pause(pause_cpu),
 	.variant(game_var),
 	.board_cfg(game_flags2),
+	.board_cfg2(game_cfg2),
+	.col_init({col_init[0], col_init[1], col_init[2]}),
 	.ce_pix(ce_pix),
 
 	.in0(in_port[0]),
@@ -402,6 +424,9 @@ exidy_board board
 	.in2(in_port[2]),
 	.intsrc(in_port[3]),
 	.coin(in_port[5]),
+	.in3(in_port[4]),
+	.in4(in_port[6]),
+	.dial(dial_pos),
 
 	.ioctl_addr(ioctl_addr),
 	.ioctl_dout(ioctl_dout),

@@ -1,9 +1,11 @@
 set_global_assignment -name SYSTEMVERILOG_FILE Arcade-Exidy.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/exidy_board.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/exidy_dial.sv
 
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/boards/exidy6502/exidy_main.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/boards/exidy_sound/exidy_sndbd.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/boards/exidy_sound/exidy_snd_mixer.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/boards/exidy_gen1_sound/exidy_gen1snd.sv
 
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/sound/pia6821.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/sound/riot6532.sv

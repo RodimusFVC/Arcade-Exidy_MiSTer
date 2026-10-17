@@ -1,0 +1,78 @@
+<misterromdescription>
+    <name>Panzer (Bootleg Of Spectar)</name>
+    <region>World</region>
+    <homebrew>no</homebrew>
+    <bootleg>yes</bootleg>
+    <version></version>
+    <alternative></alternative>
+    <platform></platform>
+    <series>Spectar</series>
+    <year>1980</year>
+    <manufacturer>bootleg (Proel)</manufacturer>
+    <category>Maze</category>
+
+    <setname>panzer</setname>
+    <parent>spectar</parent>
+    <mameversion>0289</mameversion>
+    <rbf>Exidy</rbf>
+    <about></about>
+
+    <resolution>15kHz</resolution>
+    <rotation>horizontal</rotation>
+    <flip>yes</flip>
+
+    <players>2 (alternating)</players>
+    <joystick>4-way</joystick>
+    <special_controls></special_controls>
+    <num_buttons>1</num_buttons>
+    <buttons names="Fire,Not Used,Not Used,Not Used,Coin,Start 1P,Start 2P,Pause,Not Used,Not Used,Not Used" default="A,B,X,Y,Select,Start,R,L"/>
+
+    <switches default="21">
+        <dip name="Coinage" bits="0,1" ids="2C/1C,1C/1C,1C/2C,1C/3C"/>
+        <dip name="Top Score Award" bits="2" ids="Credit,Extended Play"/>
+        <dip name="Unknown" bits="3" ids="Off,On"/>
+        <dip name="Unknown" bits="4" ids="Off,On"/>
+        <dip name="Lives" bits="5,6" ids="2,3,4,5"/>
+        <dip name="Coin Mode" bits="7" ids="Mode 1,Mode 2"/>
+    </switches>
+
+    <!-- Index 0: MAME regions, layout in rtl/exidy_board.sv -->
+    <rom index="0" md5="none" zip="panzer.zip|spectar.zip">
+        <part repeat="0x1000">00</part>
+        <part crc="a192b22b" name="p1.1a"/>
+        <part crc="19e730aa" name="p2.2a"/>
+        <part crc="2a3e7b69" name="p3.3a"/>
+        <part crc="6d224696" name="p4.4a"/>
+        <part crc="af943b5e" name="p5.5a"/>
+        <part crc="9b3d9e61" name="p6.6a"/>
+        <part crc="8ef8bc67" name="p7.7a"/>
+        <part crc="243c54f2" name="p8.8a"/>
+        <part repeat="0x400">00</part>
+        <part crc="46f473d2" name="p10.15b"/>
+        <part repeat="0x400">00</part>
+        <part crc="f01e474e" name="p9.13b"/>
+        <part repeat="0x10000">00</part>
+        <part crc="9f03513e" name="sc.4d"/>
+        <part repeat="0x400">00</part>
+        <part crc="9eb9125c" name="targ82s.123"/>
+    </rom>
+
+    <!-- Index 1: board variant, flags, board config, input map (see Arcade-Exidy.sv) -->
+    <rom index="1">
+        <part>
+            06 05 1F 08 FF 21 FF A0 FF FC FF FF 80 00 80 80
+            80 80 80 80 14 13 04 03 05 01 02 11 00 00 00 00
+            00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+            00 12 00 00 00 00 00 00 00 00 00 00 11 12 00 00
+            00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+            00 00 00 00 00 01 02 03 04 05 06 07 00 01 02 03
+            04 05 06 07 00 01 02 03 04 05 06 07 00 01 02 03
+            04 05 06 07 00 01 02 03 04 05 06 07 00 01 02 03
+            04 05 06 07 00 01 02 03 04 05 06 07 00 01 02 03
+            04 05 06 07 DA EE 61
+        </part>
+    </rom>
+
+    <remark>Panzer (Bootleg Of Spectar) (Proel Bootleg)</remark>
+    <mratimestamp>20261016000000</mratimestamp>
+</misterromdescription>
