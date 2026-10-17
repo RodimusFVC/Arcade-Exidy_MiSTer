@@ -1,0 +1,74 @@
+<misterromdescription>
+    <name>Venture (Version 4)</name>
+    <region>World</region>
+    <homebrew>no</homebrew>
+    <bootleg>no</bootleg>
+    <version></version>
+    <alternative></alternative>
+    <platform></platform>
+    <series>Venture</series>
+    <year>1981</year>
+    <manufacturer>Exidy</manufacturer>
+    <category>Maze</category>
+
+    <setname>venture4</setname>
+    <parent>venture</parent>
+    <mameversion>0289</mameversion>
+    <rbf>Exidy</rbf>
+    <about></about>
+
+    <resolution>15kHz</resolution>
+    <rotation>horizontal</rotation>
+    <flip>yes</flip>
+
+    <players>2 (alternating)</players>
+    <joystick>8-way</joystick>
+    <special_controls></special_controls>
+    <num_buttons>1</num_buttons>
+    <buttons names="Fire,Not Used,Not Used,Not Used,Coin,Start 1P,Start 2P,Pause,Not Used,Not Used,Not Used" default="A,B,X,Y,Select,Start,R,L"/>
+
+    <switches default="38">
+        <dip name="Bonus Life" bits="0,1" ids="20000,30000,40000,50000"/>
+        <dip name="Coinage" bits="2,4" ids="2C/1C,1C/1C,1C/1C,1C/2C,Pence: A 2C/1C B 1C/3C,Pence: A 1C/1C B 1C/6C" values="5,4,6,7,0,3"/>
+        <dip name="Lives" bits="5,6" ids="2,3,4,5"/>
+    </switches>
+
+    <!-- Index 0: MAME regions, layout in rtl/exidy_board.sv -->
+    <rom index="0" md5="none" zip="venture4.zip|venture.zip">
+        <part crc="1c5448f9" name="vel_13a-4.13a"/>
+        <part crc="e62491cc" name="vel_12a-4.12a"/>
+        <part crc="e91faeaf" name="vel_11a-4.11a"/>
+        <part crc="da3a2991" name="vel_10a-4.10a"/>
+        <part crc="d1887b11" name="vel_9a-4.a9"/>
+        <part crc="8e8153fc" name="vel_8a-4.a8"/>
+        <part crc="0a091701" name="vel_7a-4.a7"/>
+        <part crc="7b165f67" name="vel_6a-4.a6"/>
+        <part repeat="0x5800">00</part>
+        <part crc="83b8836f" name="vea_3a-2.3a"/>
+        <part crc="5154c39e" name="vea_3a-2.4a"/>
+        <part crc="1e1e3916" name="vea_3a-2.5a"/>
+        <part crc="80f3357a" name="vea_3a-2.6a"/>
+        <part crc="466addc7" name="vea_3a-2.7a"/>
+        <part repeat="0x4000">00</part>
+        <part crc="ea6fd981" name="vel_11d-2.11d"/>
+        <part crc="f76b4fcf" name="hrl14h-1.h14"/>
+        <part crc="43b35bb7" name="vel5c-1.c5"/>
+        <part crc="e26f9053" name="hrl6d-1.d6"/>
+    </rom>
+
+    <!-- Index 1: board variant, flags, board config, input map (see Arcade-Exidy.sv) -->
+    <rom index="1">
+        <part>
+            00 04 00 0B FF B0 FF 80 FF FC 80 00 80 80 80 80
+            13 14 04 03 05 01 02 11 12 00 00 00 00 00 00 00
+            00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+            00 00 00 00 00 00 00 00 11 12 00 00 00 00 00 00
+            00 01 02 03 04 05 06 07 07 00 01 02 03 05 06 04
+            00 01 02 03 04 05 06 07 00 01 02 03 04 05 06 07
+            00 01 02 03 04 05 06 07 00 01 02 03 04 05 06 07
+        </part>
+    </rom>
+
+    <remark>Venture (Version 4) (Exidy)</remark>
+    <mratimestamp>20261016000000</mratimestamp>
+</misterromdescription>

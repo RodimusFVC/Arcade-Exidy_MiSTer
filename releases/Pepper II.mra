@@ -1,0 +1,72 @@
+<misterromdescription>
+    <name>Pepper II</name>
+    <region>World</region>
+    <homebrew>no</homebrew>
+    <bootleg>no</bootleg>
+    <version></version>
+    <alternative></alternative>
+    <platform></platform>
+    <series>Pepper II</series>
+    <year>1982</year>
+    <manufacturer>Exidy</manufacturer>
+    <category>Maze</category>
+
+    <setname>pepper2</setname>
+    <parent>pepper2</parent>
+    <mameversion>0289</mameversion>
+    <rbf>Exidy</rbf>
+    <about></about>
+
+    <resolution>15kHz</resolution>
+    <rotation>horizontal</rotation>
+    <flip>yes</flip>
+
+    <players>2 (alternating)</players>
+    <joystick>4-way</joystick>
+    <special_controls></special_controls>
+    <num_buttons>1</num_buttons>
+    <buttons names="Fire,Not Used,Not Used,Not Used,Coin,Start 1P,Start 2P,Pause,Not Used,Not Used,Not Used" default="A,B,X,Y,Select,Start,R,L"/>
+
+    <switches default="5F">
+        <dip name="Bonus Life" bits="0,1" ids="40000 and 80000,50000 and 100000,70000 and 140000,90000 and 180000" values="3,2,1,0"/>
+        <dip name="Lives" bits="5,6" ids="2,3,4,5" values="3,2,1,0"/>
+        <dip name="Coinage" bits="2,4" ids="2C/1C,Coin A 2C/1C Coin B 1C/3C,1C/1C,Coin A 1C/1C Coin B 1C/4C,Coin A 1C/1C Coin B 1C/5C,1C/2C,1 Coin/3 Credits 2C/7C,1C/4C" values="6,0,7,2,3,5,1,4"/>
+    </switches>
+
+    <!-- Index 0: MAME regions, layout in rtl/exidy_board.sv -->
+    <rom index="0" md5="none" zip="pepper2.zip">
+        <part repeat="0x1000">00</part>
+        <part crc="33db4737" name="p2l-8_12a.12a"/>
+        <part crc="a1f43b1f" name="p2l-8_11a.11a"/>
+        <part crc="4d7d7786" name="p2l-8_10a.10a"/>
+        <part crc="b3362298" name="p2l-8_9a.9a"/>
+        <part crc="64d106ed" name="p2l-8_8a.8a"/>
+        <part crc="b1c6f07c" name="p2l-8_7a.7a"/>
+        <part crc="515b1046" name="p2l-8_6a.6a"/>
+        <part repeat="0x6800">00</part>
+        <part crc="90e3c781" name="p2a-2_5a.5a"/>
+        <part crc="dd343e34" name="p2a-2_6a.6a"/>
+        <part crc="e02b4356" name="p2a-2_7a.7a"/>
+        <part repeat="0x4000">00</part>
+        <part crc="b25160cd" name="p2l-1_11d.11d"/>
+        <part crc="f76b4fcf" name="hrl14h-1.h14"/>
+        <part crc="e1e867ae" name="p2l5c-1.c5"/>
+        <part crc="0da1bdf9" name="p2l6d-1.d6"/>
+    </rom>
+
+    <!-- Index 1: board variant, flags, board config, input map (see Arcade-Exidy.sv) -->
+    <rom index="1">
+        <part>
+            02 05 00 2B FF DE FF 80 FF FC 80 00 80 80 80 80
+            13 14 04 03 05 01 02 11 12 00 00 00 00 00 00 00
+            00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+            00 00 00 00 00 00 00 00 11 12 00 00 00 00 00 00
+            00 01 02 03 04 05 06 07 07 00 01 02 03 05 06 04
+            00 01 02 03 04 05 06 07 00 01 02 03 04 05 06 07
+            00 01 02 03 04 05 06 07 00 01 02 03 04 05 06 07
+        </part>
+    </rom>
+
+    <remark>Pepper II (Version 8) (Exidy)</remark>
+    <mratimestamp>20261016000000</mratimestamp>
+</misterromdescription>

@@ -1,0 +1,73 @@
+<misterromdescription>
+    <name>Mouse Trap (Bootleg)</name>
+    <region>World</region>
+    <homebrew>no</homebrew>
+    <bootleg>yes</bootleg>
+    <version></version>
+    <alternative></alternative>
+    <platform></platform>
+    <series>Mouse Trap</series>
+    <year>1981</year>
+    <manufacturer>bootleg</manufacturer>
+    <category>Maze</category>
+
+    <setname>mtrapb</setname>
+    <parent>mtrap</parent>
+    <mameversion>0289</mameversion>
+    <rbf>Exidy</rbf>
+    <about></about>
+
+    <resolution>15kHz</resolution>
+    <rotation>horizontal</rotation>
+    <flip>yes</flip>
+
+    <players>2 (alternating)</players>
+    <joystick>4-way</joystick>
+    <special_controls></special_controls>
+    <num_buttons>4</num_buttons>
+    <buttons names="Dog Button,Yellow Button,Red Button,Blue Button,Coin,Start 1P,Start 2P,Pause,Not Used,Not Used,Not Used" default="A,B,X,Y,Select,Start,R,L"/>
+
+    <switches default="5F,FF">
+        <dip name="Bonus Life" bits="0,1" ids="30000,40000,50000,60000" values="3,2,1,0"/>
+        <dip name="Coinage" bits="2,4" ids="2C/1C,Coin A 2C/1C Coin B 1C/3C,1C/1C,Coin A 1C/1C Coin B 1C/4C,Coin A 1C/1C Coin B 1C/5C,1C/2C,Coin A 1C/3C Coin B 2C/7C,1C/4C" values="6,0,7,2,3,5,1,4"/>
+        <dip name="Lives" bits="5,6" ids="2,3,4,5" values="3,2,1,0"/>
+        <dip name="Free Play" bits="8" ids="Off,On" values="1,0"/>
+    </switches>
+
+    <!-- Index 0: MAME regions, layout in rtl/exidy_board.sv -->
+    <rom index="0" md5="none" zip="mtrapb.zip|mtrap.zip">
+        <part repeat="0x2000">00</part>
+        <part crc="a0faa3e5" name="cpu.p2"/>
+        <part crc="d7378af9" name="cpu.m2"/>
+        <part crc="be667e64" name="cpu.l2"/>
+        <part crc="69471f27" name="cpu.k2"/>
+        <part crc="1eb0c4c9" name="cpu.j2"/>
+        <part crc="16ea9a51" name="cpu.h2"/>
+        <part repeat="0x6000">00</part>
+        <part crc="d4160aa8" name="2564.j10"/>
+        <part crc="13db8ed3" name="mta_2a.2a"/>
+        <part crc="31bdfe5c" name="mta_3a.3a"/>
+        <part crc="1502d0e8" name="mta_4a.4a"/>
+        <part crc="658482a6" name="mta_1a.1a"/>
+        <part crc="c6e4d339" name="2516.j6"/>
+        <part crc="f76b4fcf" name="74s288.6c"/>
+        <part crc="43b35bb7" name="24s10n.1c"/>
+        <part crc="e26f9053" name="74s288.3d"/>
+    </rom>
+
+    <!-- Index 1: board variant, flags, board config, input map (see Arcade-Exidy.sv) -->
+    <rom index="1">
+        <part>
+            01 05 00 17 FF DE FF 80 FF FC 80 00 01 80 80 80
+            13 14 04 03 05 01 02 11 12 00 00 00 00 00 00 00
+            06 07 00 08 00 00 00 00 00 00 00 00 00 00 00 00
+            00 00 00 00 00 00 00 00 11 12 00 00 00 00 00 00
+            00 01 02 03 04 05 06 07 07 00 01 02 03 05 06 04
+            01 02 00 03 04 05 06 07 00 01 02 03 04 05 06 07
+            00 01 02 03 04 05 06 07 00 01 02 03 04 05 06 07
+        </part>
+    </rom>
+
+    <remark>Mouse Trap (Bootleg)</remark>
+    <mratimestamp>20261016000000</mratimestamp>
+</misterromdescription>
