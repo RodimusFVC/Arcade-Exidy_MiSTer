@@ -1,8 +1,16 @@
 set_global_assignment -name SYSTEMVERILOG_FILE Arcade-Exidy.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/exidy_board.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/exidy_dial.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/exidy_paddle.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/exidy_stick.sv
 
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/boards/exidy6502/exidy_main.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/boards/exidy_circus/circus_main.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/boards/exidy_circus/circus_snd.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/boards/exidy_starfire/starfire_main.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/boards/exidy_starfire/starfire_snd.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/boards/exidy_victory/victory_main.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/boards/exidy_carpolo/carpolo_main.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/boards/exidy_sound/exidy_sndbd.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/boards/exidy_sound/exidy_snd_mixer.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/boards/exidy_gen1_sound/exidy_gen1snd.sv
@@ -10,6 +18,9 @@ set_global_assignment -name SYSTEMVERILOG_FILE rtl/boards/exidy_gen1_sound/exidy
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/sound/pia6821.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/sound/riot6532.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/sound/pit8253.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/sound/tms5220.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/sound/tms5220_rsws.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/sound/dsnd_engine.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/sound/ptm6840.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/sound/mc3417.sv
 

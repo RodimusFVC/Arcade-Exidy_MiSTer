@@ -72,6 +72,16 @@
         </part>
     </rom>
 
+    <!-- Index 3: hiscore config (MAME hiscore.dat), index 4: saved scores -->
+    <rom index="3" md5="none">
+        <part>
+            00 EB 6E 00 00 FF 00 02 00 02 00 02 FF FF 04 00
+            00 00 03 80 00 23 00 53
+        </part>
+    </rom>
+    <rom index="4"></rom>
+    <nvram index="4" size="35"></nvram>
+
     <remark>Venture (Version 5 Set 1) (Exidy)</remark>
     <mratimestamp>20261016000000</mratimestamp>
 </misterromdescription>

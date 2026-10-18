@@ -1,0 +1,88 @@
+<misterromdescription>
+    <name>Victor Banana</name>
+    <region>World</region>
+    <homebrew>no</homebrew>
+    <bootleg>no</bootleg>
+    <version></version>
+    <alternative></alternative>
+    <platform></platform>
+    <series>Victory</series>
+    <year>1982</year>
+    <manufacturer>Exidy</manufacturer>
+    <category>Shooter</category>
+
+    <setname>victorba</setname>
+    <parent>victory</parent>
+    <mameversion>0289</mameversion>
+    <rbf>Exidy</rbf>
+    <about></about>
+
+    <resolution>15kHz</resolution>
+    <rotation>horizontal</rotation>
+    <flip>yes</flip>
+
+    <players>2 (alternating)</players>
+    <joystick>8-way</joystick>
+    <special_controls></special_controls>
+    <num_buttons>4</num_buttons>
+    <buttons names="Thrust,Fire,Shields,Doomsday,Coin,Start 1P,Start 2P,Pause,Not Used,Not Used,Not Used" default="A,B,X,Y,Select,Start,R,L"/>
+
+    <switches default="F0">
+        <dip name="????" bits="0,2" ids="0,1,2,3,4,5,6,7"/>
+        <dip name="Refresh" bits="3" ids="60 Hz,50 Hz"/>
+    </switches>
+
+    <!-- Index 0: MAME regions, layout in rtl/exidy_board.sv -->
+    <rom index="0" md5="none" zip="victorba.zip|victory.zip">
+        <part crc="dd788e93" name="j2.rom"/>
+        <part crc="f47bf046" name="k2.rom"/>
+        <part crc="baef885e" name="kl2.rom"/>
+        <part crc="739e4799" name="l2.rom"/>
+        <part crc="a88185e6" name="m2.rom"/>
+        <part crc="6724eb01" name="n2.rom"/>
+        <part crc="2cf34ad7" name="p2.rom"/>
+        <part crc="89bb0359" name="t2.rom"/>
+        <part repeat="0x4000">00</part>
+        <part crc="d4927560" name="vic1.7bc"/>
+        <part crc="059efab5" name="vic1.7c"/>
+        <part crc="82c4767c" name="vic1.7d"/>
+        <part crc="a19be034" name="vic1.7e"/>
+        <part repeat="0x7000">00</part>
+        <part crc="b2c75dee" name="hsc17l"/>
+        <part crc="a107c4f5" name="hsc13e"/>
+        <part crc="5f06ad26" name="hsc16a"/>
+        <part crc="86165f1e" name="hsc19b"/>
+        <part crc="fd27a57a" name="hsc19c"/>
+        <part crc="09c4dbf6" name="hsc19d"/>
+        <part crc="ce1464f4" name="hsc19e"/>
+        <part crc="5fb6b158" name="3j"/>
+        <part repeat="0x28E20">00</part>
+        <part crc="5e415084" name="j1.rom"/>
+        <part crc="3f327dff" name="k1.rom"/>
+        <part crc="6c82ebca" name="kl1.rom"/>
+        <part crc="03b89d8a" name="l1.rom"/>
+    </rom>
+
+    <!-- Index 1: board variant, flags, board config, input map (see Arcade-Exidy.sv) -->
+    <rom index="1">
+        <part>
+            0A 04 00 00 FF 78 FF FF FF FF FF FF 80 00 80 80
+            80 80 80 80 00 16 14 13 07 08 06 05 00 00 00 00
+            00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+            00 00 00 00 00 00 00 00 00 00 00 00 17 12 11 00
+            00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+            00 00 00 00 00 01 02 03 04 05 06 07 00 01 02 04
+            05 06 07 03 00 01 02 03 04 05 06 07 00 01 02 03
+            04 05 06 07 00 01 02 03 04 05 06 07 00 01 02 03
+            04 05 06 07 00 01 02 03 04 05 06 07 00 01 02 03
+            04 05 06 07 00 00 00
+        </part>
+    </rom>
+
+    <!-- Index 4: battery-backed CMOS RAM -->
+    <rom index="4"></rom>
+    <nvram index="4" size="2048"></nvram>
+
+    <remark>Victor Banana (Exidy)</remark>
+    <mratimestamp>20261016000000</mratimestamp>
+</misterromdescription>

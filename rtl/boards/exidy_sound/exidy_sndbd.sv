@@ -1,6 +1,7 @@
 // ============================================================================
 // exidy_sndbd.sv — Exidy Venture-type Audio/Color board, sound section
 //   Venture / Pepper II (77-3387 / 77-0007) and Mouse Trap (177-3392, + Z80/MC3417 CVSD)
+//   Victory (victory = 1): MAME victory_sound_device map, F800/F801 command link, TMS5220 on the RIOT.
 // Sources: Claude/exidy_schematic_facts.md (schematic = target), MAME exidysound.cpp (fallback).
 //
 // Sound 6502 map (74LS154 on A14-A11, A15 undecoded):
@@ -12,6 +13,12 @@
 // /IRQ = sound PIA IRQA | RIOT IRQ (6840 IRQ not connected).
 // All clocks are enables from one 22.578 MHz clk: CLK = 3.579545/2 (8253, Z80),
 // E = CLK/2 (6502 Phi0, 6840, 6532, sound-side PIA).
+//
+// Victory map (A15-A12; MAME exidysound.cpp victory_audio_map): 0000-0FFF RIOT RAM (A7=0) / 128 B RAM (A7=1),
+//   1xxx RIOT I/O, 2xxx PIA, 3xxx 8253 (write only), 5xxx 6840, 6xxx sfx latches, C000-FFFF ROM; rest open bus.
+//   No filter latch. RIOT PA = TMS5220 data, PB0 -> /RS, PB1 -> /WS, PB2 <- /READY, PB3 <- /INT.
+//   PIA: PA <- command latch, CA1 <- command pending (0), CA2 falling -> CA1 = 1; PB -> response,
+//   CB1 <- response flag (main read F800 -> 0, CB2 falling edge (flip-flop F4) -> 1).
 // ============================================================================
 
 module exidy_sndbd #(
@@ -20,7 +27,9 @@ module exidy_sndbd #(
 (
     input  logic        clk,            // 22.578 MHz
     input  logic        reset,          // active high; held during ROM download
+    input  logic        pause,          // OSD pause: freezes every clock enable on the board (CPUs stay in lockstep)
     input  logic        cvsd_en,        // 1 = Mouse Trap speech section fitted
+    input  logic        victory,        // 1 = Victory map + command latch + TMS5220
 
     input  logic [24:0] ioctl_addr,
     input  logic  [7:0] ioctl_dout,
@@ -47,6 +56,12 @@ module exidy_sndbd #(
     input  logic  [7:0] z_dout,
     input  logic        z_mreq_n, z_iorq_n, z_rd_n, z_wr_n, z_m1_n,
     output logic  [7:0] z_din,
+
+    input  logic        vic_cmd_wr,     // one clk pulse: main CPU wrote F800, data on vic_cmd
+    input  logic  [7:0] vic_cmd,
+    input  logic        vic_resp_rd,    // one clk pulse: main CPU finished a read of F800
+    output logic  [7:0] vic_resp,       // PIA port B output
+    output logic  [1:0] vic_status,     // {CA1, CB1}: main reads F801 as {vic_status, 6'b0}
 
     input  logic  [3:0] vol_music,
     input  logic  [3:0] vol_sfx,
@@ -77,7 +92,8 @@ always_ff @(posedge clk) begin
         cen_p  <= 1'b0;
         cen_n  <= 1'b0;
         snd_ce <= 1'b0;
-        if (ck_nxt >= CK_MOD) begin
+        if (pause) ;                                    // hold the accumulator: nothing on the board advances
+        else if (ck_nxt >= CK_MOD) begin
             ck_acc <= ck_nxt - CK_MOD;
             cen_p  <= 1'b1;
             e_ph   <= ~e_ph;
@@ -115,15 +131,25 @@ dpram_dc #(.widthad_a(14), .width_a(8)) cvsd_rom
 // Sound CPU decode
 // ============================================================================
 wire [3:0] blk     = snd_a[14:11];
-wire       s_ram   = (blk == 4'd0) & ~(cvsd_en & MTRAP_EXRAM_OPEN & snd_a[7]);
-wire       s_rio   = (blk == 4'd1);
-wire       s_pia   = (blk == 4'd2);
-wire       s_pit   = (blk == 4'd3);
-wire       s_flt   = (blk == 4'd4);
-wire       s_ptm   = (blk == 4'd5);
-wire       s_sfx   = (blk == 4'd6);
-wire       s_rom   = (blk >= 4'd11);
+wire [3:0] vblk    = snd_a[15:12];       // Victory decode
+wire       s_ram   = victory ? ((vblk == 4'd0) & ~snd_a[7]) : ((blk == 4'd0) & ~(cvsd_en & MTRAP_EXRAM_OPEN & snd_a[7]));
+wire       s_vram  = victory & (vblk == 4'd0) & snd_a[7];
+wire       s_rio   = victory ? (vblk == 4'd1) : (blk == 4'd1);
+wire       s_pia   = victory ? (vblk == 4'd2) : (blk == 4'd2);
+wire       s_pit   = victory ? (vblk == 4'd3) : (blk == 4'd3);
+wire       s_flt   = ~victory & (blk == 4'd4);
+wire       s_ptm   = victory ? (vblk == 4'd5) : (blk == 4'd5);
+wire       s_sfx   = victory ? (vblk == 4'd6) : (blk == 4'd6);
+wire       s_rom   = victory ? (snd_a[15:14] == 2'b11) : (blk >= 4'd11);
 wire       s_wr    = e_ce & ~snd_rw;
+
+// Victory 0080-00FF RAM (mirror 0F00)
+logic [7:0] vram_q;
+dpram_dc #(.widthad_a(7), .width_a(8)) vic_ram
+(
+    .clock_a(clk), .address_a(snd_a[6:0]), .data_a(snd_dout), .wren_a(s_wr & s_vram), .q_a(),
+    .clock_b(clk), .address_b(snd_a[6:0]), .data_b(8'h00), .wren_b(1'b0), .q_b(vram_q)
+);
 
 // ============================================================================
 // RIOT 6532
@@ -131,14 +157,16 @@ wire       s_wr    = e_ce & ~snd_rw;
 logic [7:0] riot_q, riot_pa, riot_pb;
 logic       riot_irq;
 logic       busy_ff;          // Mouse Trap E2: /BUSY from the Z80 -> PB0
+logic [7:0] tms_bus;          // Victory: TMS5220 data bus (FF when not driving)
+logic       tms_ready_n, tms_int_n;
 
 riot6532 riot
 (
     .clk(clk), .rst(reset), .ce(e_ce),
     .ram_cs(s_ram), .io_cs(s_rio), .rw(snd_rw), .a(snd_a[6:0]), .din(snd_dout), .dout(riot_q),
     .irq(riot_irq),
-    .pa_i(8'hFF), .pa_pins(riot_pa),
-    .pb_i({7'h7F, cvsd_en ? busy_ff : 1'b1}), .pb_pins(riot_pb)
+    .pa_i(victory ? tms_bus : 8'hFF), .pa_pins(riot_pa),
+    .pb_i(victory ? {4'hF, tms_int_n, tms_ready_n, 2'b11} : {7'h7F, cvsd_en ? busy_ff : 1'b1}), .pb_pins(riot_pb)
 );
 
 // ============================================================================
@@ -168,13 +196,35 @@ pia6821 main_pia
 );
 assign main_dout = mp_q;
 
+// Victory: main-side link (MAME victory_sound_device) replaces the main PIA
+logic [7:0] vic_latch;
+logic       vic_ca1, vic_cb1, vic_ca2_d, vic_cb2_d;
+
 pia6821 snd_pia
 (
     .clk(clk), .rst(reset), .ce(e_ce), .cs(s_pia), .rw(snd_rw), .rs(snd_a[1:0]),
     .din(snd_dout), .dout(sp_q), .irqa(sp_irqa), .irqb(),
-    .pa_i(net_b), .pa_o(sp_pa_o), .pa_oe(sp_pa_oe), .ca1(n_mcb2), .ca2_i(n_sca2), .ca2_o(sp_ca2_o), .ca2_oe(sp_ca2_oe),
-    .pb_i(net_a), .pb_o(sp_pb_o), .pb_oe(sp_pb_oe), .cb1(n_mca2), .cb2_i(n_scb2), .cb2_o(sp_cb2_o), .cb2_oe(sp_cb2_oe)
+    .pa_i(victory ? vic_latch : net_b), .pa_o(sp_pa_o), .pa_oe(sp_pa_oe),
+    .ca1(victory ? vic_ca1 : n_mcb2), .ca2_i(n_sca2), .ca2_o(sp_ca2_o), .ca2_oe(sp_ca2_oe),
+    .pb_i(victory ? 8'h00 : net_a), .pb_o(sp_pb_o), .pb_oe(sp_pb_oe),
+    .cb1(victory ? vic_cb1 : n_mca2), .cb2_i(n_scb2), .cb2_o(sp_cb2_o), .cb2_oe(sp_cb2_oe)
 );
+
+// CA2 / CB2 pins as seen by the link logic (undriven = high): CA2 falling = irq_clear_w(0), CB2 falling = main_ack_w
+always_ff @(posedge clk) begin
+    if (reset) begin
+        vic_latch <= 8'h00; vic_ca1 <= 1'b1; vic_cb1 <= 1'b1; vic_ca2_d <= 1'b1; vic_cb2_d <= 1'b1;
+    end else begin
+        vic_ca2_d <= n_sca2;
+        vic_cb2_d <= n_scb2;
+        if (vic_ca2_d & ~n_sca2) vic_ca1 <= 1'b1;
+        if (vic_cb2_d & ~n_scb2) vic_cb1 <= 1'b1;
+        if (vic_cmd_wr) begin vic_latch <= vic_cmd; vic_ca1 <= 1'b0; end
+        if (vic_resp_rd) vic_cb1 <= 1'b0;
+    end
+end
+assign vic_resp   = sp_pb_o & sp_pb_oe;
+assign vic_status = {vic_ca1, vic_cb1};
 
 assign snd_irq_n = ~(sp_irqa | riot_irq);
 
@@ -252,6 +302,7 @@ always_comb begin
     else if (s_pia)         snd_din = sp_q;
     else if (s_ptm)         snd_din = ptm_q;
     else if (s_rom)         snd_din = rom_q;
+    else if (s_vram)        snd_din = vram_q;
     else                    snd_din = last_bus;
 end
 
@@ -317,6 +368,17 @@ mc3417 cvsd
 );
 
 // ============================================================================
+// Victory speech: TMS5220 (640 kHz) on the RIOT
+// ============================================================================
+logic signed [15:0] tms_audio;
+tms5220_rsws #(.CLK_HZ(22578000), .TMS_HZ(640000)) tms
+(
+    .clk(clk), .reset(reset | ~victory), .pause(pause),
+    .rs_n(riot_pb[0]), .ws_n(riot_pb[1]), .d_in(riot_pa), .d_out(tms_bus),
+    .ready_n(tms_ready_n), .int_n(tms_int_n), .audio(tms_audio)
+);
+
+// ============================================================================
 // Analog section
 // ============================================================================
 exidy_snd_mixer mixer
@@ -324,11 +386,12 @@ exidy_snd_mixer mixer
     .clk(clk), .rst(reset), .ce(e_ce), .mtrap(cvsd_en),
     .gate(ch_gate), .lvl1(lvl1), .lvl2(lvl2), .lvl3(lvl3), .filt(filt),
     .music(pit_out), .speech_on(cvsd_en), .speech(cvsd_int),
+    .tms_on(victory), .tms(tms_audio),
     .vol_music(vol_music), .vol_sfx(vol_sfx), .vol_speech(vol_speech),
     .audio(audio)
 );
 
 // unused inputs
-wire unused = &{1'b0, z_mreq_n, z_rd_n, snd_a[15], riot_pb, riot_pa[7:5], z_a[15:14], z_dout[7:1]};
+wire unused = &{1'b0, z_mreq_n, z_rd_n, riot_pb[7:2], riot_pa[7:5], z_a[15:14], z_dout[7:1]};
 
 endmodule

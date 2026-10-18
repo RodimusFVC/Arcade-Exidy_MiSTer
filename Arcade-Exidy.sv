@@ -44,9 +44,11 @@ wire        ioctl_wr;
 wire  [7:0] ioctl_index;
 wire [24:0] ioctl_addr;
 wire  [7:0] ioctl_dout;
-wire [15:0] joystick_0, joystick_1;
+wire [15:0] joystick_0, joystick_1, joystick_2, joystick_3;
 wire [15:0] joystick_r_analog_0, joystick_r_analog_1;   // right analog sticks: [15:8] Y, [7:0] X, signed
-wire  [8:0] spinner_0;
+wire  [8:0] spinner_0, spinner_1, spinner_2, spinner_3;
+wire  [7:0] paddle_0, paddle_1;
+wire [15:0] joystick_l_analog_0, joystick_l_analog_1;
 wire [24:0] ps2_mouse;
 wire [21:0] gamma_bus;
 wire        direct_video;
@@ -68,9 +70,9 @@ assign HDMI_FREEZE = 0;
 assign HDMI_BLACKOUT = 0;
 assign HDMI_BOB_DEINT = 0;
 
-wire signed [15:0] audio;
+wire signed [15:0] audio, audio_r;
 assign AUDIO_L = pause_cpu ? 16'd0 : audio;
-assign AUDIO_R = pause_cpu ? 16'd0 : audio;
+assign AUDIO_R = pause_cpu ? 16'd0 : audio_r;     // Fire One is stereo; other boards drive both sides
 assign AUDIO_S = 1;   // signed
 assign AUDIO_MIX = 0;
 
@@ -83,7 +85,8 @@ assign BUTTONS = 0;
 
 // MRA index 1:
 //   byte 0      board variant (see rtl/exidy_board.sv)
-//   byte 1      flags: [0] 4-way joystick, [2] coins are 2-frame pulses, [4] vertical, [7] vertical is ROT90
+//   byte 1      flags: [0] 4-way joystick, [2] coins are 2-frame pulses, [4] vertical, [5] paddle reversed,
+//               [6] paddle game (shows the Paddle OSD page), [7] vertical is ROT90
 //   byte 2      board config 2: gen-1 map options (see rtl/boards/exidy6502/exidy_main.sv)
 //   byte 3      board config (see rtl/boards/exidy6502/exidy_main.sv)
 //   bytes 4-11  idle level of every bit of the 8 ports (board order: IN0, DSW, IN2, INTSOURCE, IN3, COIN, IN4, -)
@@ -99,6 +102,8 @@ reg [7:0] game_flags  = 8'h04;
 reg [7:0] game_cfg2   = 8'd0;
 reg [7:0] col_init[3] = '{8'd0, 8'd0, 8'd0};
 reg [7:0] game_flags2 = 8'h0B;
+wire      game_cp     = (game_var == 8'd11);            // Car Polo (fast D-pad dial)
+wire      game_sf     = (game_var == 8'd8);             // Star Fire 1 / 2 (flight stick)
 reg [5:0] in_map[64];
 reg [7:0] port_idle[8] = '{8'hFF,8'hFF,8'hFF,8'hFF,8'hFF,8'h00,8'hFF,8'hFF};
 reg [7:0] port_dip[8]  = '{8'h80,8'h80,8'h80,8'h80,8'h80,8'h80,8'h80,8'h80};
@@ -110,6 +115,13 @@ wire [2:0] idle_idx  = ioctl_addr[2:0] - 3'd4;     // bytes 4-11  -> 0-7
 wire [2:0] dip_idx   = ioctl_addr[2:0] - 3'd4;     // bytes 12-19 -> 0-7
 reg  [2:0] dip_bit[64];
 initial for (int i = 0; i < 64; i++) dip_bit[i] = i % 8;
+
+// discrete sound engine: the MRA carries a program (index 5, after index 1) -> the engine replaces the board's sound
+reg ds_on = 1'b0;
+always @(posedge CLK_SYS) if (ioctl_wr) begin
+    if (ioctl_index == 8'd1 && ioctl_addr == 25'd0) ds_on <= 1'b0;
+    if (ioctl_index == 8'd5) ds_on <= 1'b1;
+end
 
 always @(posedge CLK_SYS) begin
     if (ioctl_wr && ioctl_index == 8'd1) begin
@@ -144,11 +156,25 @@ localparam CONF_STR = {
 	"P1O[40:37],H Position (CRT),0,+1,+2,+3,+4,+5,+6,+7,-8,-7,-6,-5,-4,-3,-2,-1;",
 	"P1O[44:41],V Position (CRT),0,+1,+2,+3,+4,+5,+6,+7,-8,-7,-6,-5,-4,-3,-2,-1;",
 	"P1OGI,Scandoubler Fx,None,HQ2x,CRT 25%,CRT 50%,CRT 75%;",
+	"P1O[57],Colour Overlay,On,Off;",
+	"-;",
+	"H4P5,Game Options;",
+	"H1P5-,Paddle;",
+	"H1P5O[60:58],Paddle Sensitivity,1.0x,0.75x,0.5x,0.25x,0.125x,1.25x,1.5x,2.0x;",
+	"H1P5O[61],Paddle Direction,Normal,Reversed;",
+	"H1P5-,Paddle / spinner / mouse / stick;",
+	"H3P5-,Flight Stick;",
+	"H3P5O[75],Stick Mode,Flight Control,Standard Control;",
 	"-;",
 	"P2,Game Audio;",
 	"P2O[48:45],Music Volume,Default,+1,+2,+3,+4,+5,+6,+7,Off,-7,-6,-5,-4,-3,-2,-1;",
 	"P2O[52:49],Effects Volume,Default,+1,+2,+3,+4,+5,+6,+7,Off,-7,-6,-5,-4,-3,-2,-1;",
 	"P2O[56:53],Speech Volume,Default,+1,+2,+3,+4,+5,+6,+7,Off,-7,-6,-5,-4,-3,-2,-1;",
+	"H2P2-;",
+	"H2P2O[66:64],Timing Caps,Factory,-10%,-20%,-30%,+10%,+20%,+30%;",
+	"H2P2O[69:67],Filter Caps,Factory,-10%,-20%,-30%,+10%,+20%,+30%;",
+	"H2P2O[72:70],Oscillator Caps,Factory,-10%,-20%,-30%,+10%,+20%,+30%;",
+	"H2P2O[74:73],Aged Caps,Off,Light,Heavy;",
 	"-;",
 	"P3,Pause Options;",
 	"P3OJ,Pause when OSD is open,On,Off;",
@@ -178,7 +204,7 @@ hps_io #(.CONF_STR(CONF_STR)) hps_io
 
 	.buttons(buttons),
 	.status(status),
-	.status_menumask({direct_video}),
+	.status_menumask({~(game_flags[6] | game_sf), ~game_sf, ~ds_on, ~game_flags[6], direct_video}),
 
 	.ioctl_download(ioctl_download),
 	.ioctl_upload(ioctl_upload),
@@ -192,9 +218,18 @@ hps_io #(.CONF_STR(CONF_STR)) hps_io
 
 	.joystick_0(joystick_0),
 	.joystick_1(joystick_1),
+	.joystick_2(joystick_2),
+	.joystick_3(joystick_3),
 	.joystick_r_analog_0(joystick_r_analog_0),
 	.joystick_r_analog_1(joystick_r_analog_1),
 	.spinner_0(spinner_0),
+	.spinner_1(spinner_1),
+	.spinner_2(spinner_2),
+	.spinner_3(spinner_3),
+	.paddle_0(paddle_0),
+	.paddle_1(paddle_1),
+	.joystick_l_analog_0(joystick_l_analog_0),
+	.joystick_l_analog_1(joystick_l_analog_1),
 	.ps2_mouse(ps2_mouse),
 	.ps2_key(ps2_key)
 );
@@ -315,7 +350,10 @@ wire [3:0] rstick1 = {ry1 < -8'sd48, ry1 > 8'sd48, rx1 < -8'sd48, rx1 > 8'sd48};
 // control ids used by the MRA input map (same numbering as the Pac-Man core; 24-31 reserved for analog)
 wire [63:0] ctl =
 {
-	18'd0,
+	11'd0,
+	joystick_3[8],                                  // 52 coin 4 (P4 coin)
+	joystick_3[6:4],                                // 51-49 P4 Btn 3-1
+	joystick_2[6:4],                                // 48-46 P3 Btn 3-1
 	joystick_1[13] | rstick1[3],                    // 45 P2 R Up    (Btn 6)
 	joystick_1[12] | rstick1[2],                    // 44 P2 R Down  (Btn 5)
 	joystick_1[7]  | rstick1[1],                    // 43 P2 R Left  (Btn 4)
@@ -329,7 +367,7 @@ wire [63:0] ctl =
 	joystick_1[13:12],                              // 35-34 P2 Btn 6-5
 	joystick_0[13:12],                              // 33-32 P1 Btn 6-5
 	8'd0,                                           // 31-24 reserved
-	1'b0,                                           // 23 coin 3
+	joystick_2[8],                                  // 23 coin 3 (P3 coin)
 	kb_service,                                     // 22 service
 	kb_tilt,                                        // 21 tilt
 	joystick_0[10] | joystick_1[10] | kb_start2,    // 20 start 2
@@ -405,7 +443,56 @@ exidy_dial exidy_dial
 	.spinner(spinner_0),
 	.mouse(ps2_mouse),
 	.pad({dir1_raw[1], dir1_raw[0]}),
+	.fast(game_cp),
 	.pos(dial_pos)
+);
+
+// Car Polo steering wheels P2-P4: spinner or D-pad left / right
+wire [7:0] dial_p2, dial_p3, dial_p4;
+exidy_dial dial_2(.clk(CLK_SYS), .reset(reset), .spinner(spinner_1), .mouse(25'd0), .pad(joystick_1[1:0]), .fast(1'b1), .pos(dial_p2));
+exidy_dial dial_3(.clk(CLK_SYS), .reset(reset), .spinner(spinner_2), .mouse(25'd0), .pad(joystick_2[1:0]), .fast(1'b1), .pos(dial_p3));
+exidy_dial dial_4(.clk(CLK_SYS), .reset(reset), .spinner(spinner_3), .mouse(25'd0), .pad(joystick_3[1:0]), .fast(1'b1), .pos(dial_p4));
+
+// Circus-family paddle: MiSTer paddle, left stick X, spinner, mouse X, P1 D-pad left / right
+wire [7:0] paddle_pos;
+wire       pad_rev  = game_flags[5] ^ status[61];
+wire [2:0] pad_sens = status[60:58];
+exidy_paddle exidy_paddle
+(
+	.clk(CLK_SYS), .reset(reset), .vblank(vblank), .sensitivity(pad_sens), .reverse(pad_rev),
+	.paddle(paddle_0), .spinner(spinner_0), .mouse(ps2_mouse), .stick_x(joystick_l_analog_0[7:0]),
+	.pad({dir1_raw[1], dir1_raw[0]}), .pos(paddle_pos)
+);
+
+// Star Fire stick (left analog / D-pad) and throttle (right analog Y / Btn 2 more, Btn 3 less)
+wire [7:0] sf_x, sf_y, sf_z;
+exidy_stick exidy_stick
+(
+	.clk(CLK_SYS),
+	.reset(reset),
+	.analog(joystick_l_analog_0),
+	.analog_r(joystick_r_analog_0),
+	.dpad(dir1_raw),
+	.thr_btn({joystick_0[5], joystick_0[6]}),
+	.std_ctl(status[75]),
+	.x(sf_x),
+	.y(sf_y),
+	.z(sf_z)
+);
+
+// Fire One paddles 0-63: P1 paddle / left stick X / spinner / mouse / D-pad, P2 paddle / stick / spinner / D-pad
+wire [7:0] fo_p1, fo_p2;
+exidy_paddle #(.PMIN(8'd0), .PMAX(8'd63), .PCEN(8'd32)) fo_paddle1
+(
+	.clk(CLK_SYS), .reset(reset), .vblank(vblank), .sensitivity(pad_sens), .reverse(pad_rev),
+	.paddle(paddle_0), .spinner(spinner_0), .mouse(ps2_mouse), .stick_x(joystick_l_analog_0[7:0]),
+	.pad({dir1_raw[1], dir1_raw[0]}), .pos(fo_p1)
+);
+exidy_paddle #(.PMIN(8'd0), .PMAX(8'd63), .PCEN(8'd32)) fo_paddle2
+(
+	.clk(CLK_SYS), .reset(reset), .vblank(vblank), .sensitivity(pad_sens), .reverse(pad_rev),
+	.paddle(paddle_1), .spinner(spinner_1), .mouse(25'd0), .stick_x(joystick_l_analog_1[7:0]),
+	.pad({dir2_raw[1], dir2_raw[0]}), .pos(fo_p2)
 );
 
 exidy_board board
@@ -427,18 +514,30 @@ exidy_board board
 	.in3(in_port[4]),
 	.in4(in_port[6]),
 	.dial(dial_pos),
+	.dial2(dial_p2),
+	.dial3(dial_p3),
+	.dial4(dial_p4),
+	.paddle(paddle_pos),
+	.stick_x(sf_x),
+	.stick_y(sf_y),
+	.throttle(sf_z),
+	.pad1(fo_p1[5:0]),
+	.pad2(fo_p2[5:0]),
 
 	.ioctl_addr(ioctl_addr),
 	.ioctl_dout(ioctl_dout),
 	.ioctl_wr0(ioctl_wr & (ioctl_index == 8'd0)),
 
 	.crt_flip(status[22]),
+	.overlay_en(~status[57]),
 	.h_adj(status[40:37]),
 	.v_adj(status[44:41]),
 
 	.vol_music(status[48:45] ^ 4'd8),
 	.vol_sfx(status[52:49] ^ 4'd8),
 	.vol_speech(status[56:53] ^ 4'd8),
+	.ds_wr(ioctl_wr & (ioctl_index == 8'd5)), .ds_addr(ioctl_addr[12:0]), .ds_data(ioctl_dout), .ds_on(ds_on),
+	.ds_caps({3'd0, status[74:70], 2'd0, status[69:64]}),
 
 	.video_r(r),
 	.video_g(g),
@@ -450,6 +549,12 @@ exidy_board board
 	.vblank_raw(),
 
 	.audio(audio),
+	.audio_r(audio_r),
+	.nv_wr(ioctl_wr & ioctl_download & (ioctl_index == 8'd4)),
+	.nv_din(ioctl_dout),
+	.nv_dout(nv_dout),
+	.nv_saved(ioctl_upload & (ioctl_index == 8'd4)),
+	.nv_dirty(nv_dirty),
 
 	.hs_address(hs_address),
 	.hs_data_in(hs_data_in),
@@ -467,6 +572,13 @@ wire        hs_access_write;
 wire        hs_pause;
 wire        hs_configured;
 
+// Victory keeps its CMOS RAM in the NVRAM slot (index 4) that hiscore sets use for their dumps
+wire        game_vic = (game_var == 8'd10);
+wire  [7:0] nv_dout, hs_to_hps;
+wire        nv_dirty, hs_upload_req;
+assign ioctl_din        = game_vic ? nv_dout : hs_to_hps;
+assign ioctl_upload_req = game_vic ? nv_dirty : hs_upload_req;
+
 hiscore #(
 	.HS_ADDRESSWIDTH(16),
 	.CFG_ADDRESSWIDTH(4),
@@ -480,7 +592,9 @@ hiscore #(
 	.data_from_ram(hs_data_out),
 	.data_to_ram(hs_data_in),
 	.data_from_hps(ioctl_dout),
-	.data_to_hps(ioctl_din),
+	.data_to_hps(hs_to_hps),
+	.ioctl_upload_req(hs_upload_req),
+	.ioctl_index(game_vic ? 8'hFF : ioctl_index),
 	.ram_write(hs_write_enable),
 	.ram_intent_read(hs_access_read),
 	.ram_intent_write(hs_access_write),

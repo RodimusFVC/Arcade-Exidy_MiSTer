@@ -23,7 +23,11 @@ module exidy_gen1snd
     input  logic        ioctl_wr0,
     input  logic  [3:0] vol_music,    // OSD pots, 8 = default/unity, 0 = off, 15 = loudest (tone generator + CPU music)
     input  logic  [3:0] vol_sfx,      // shoot, crash, Spectar sound
-    output logic signed [15:0] audio
+    output logic signed [15:0] audio,
+    output logic  [7:0] lat0,         // 5200 / 5201 latches, tone flip-flop and MUSIC bit (discrete sound engine sources)
+    output logic  [7:0] lat1,
+    output logic        tone,
+    output logic        mus
 );
 
     // ======================================================================
@@ -44,6 +48,9 @@ module exidy_gen1snd
     end
 
     wire music = l0[0];
+    assign lat0 = l0;
+    assign lat1 = l1;
+    assign mus  = music;
     wire shoot = l0[1];
     wire warn  = l0[3];                 // 5WARN high -> LS04 -> 7407 grounds C28 -> C28 parallel to C5 (slow sweep)
     wire spec  = ~l0[4];                // 5SPEC low  -> 556 5A runs
@@ -71,6 +78,7 @@ module exidy_gen1snd
     logic [7:0] pre, div;
     logic [3:0] step;
     logic       ninc, tq;
+    assign tone = tq;
     wire        tc     = (pre == 8'hFF);
     wire  [7:0] reload = spectar ? l1 : prom[{upper, step}];
 

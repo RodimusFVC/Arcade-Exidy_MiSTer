@@ -122,6 +122,8 @@ module exidy_snd_mixer #(
     input  logic         [2:0] music,       // 8253 OUT2..OUT0
     input  logic               speech_on,
     input  logic signed [23:0] speech,      // MC3417 integrator, Q16
+    input  logic               tms_on,      // Victory: TMS5220 replaces the CVSD chain on the speech pot
+    input  logic signed [15:0] tms,         // TMS5220 sample (MAME stream units * 32768)
     input  logic         [3:0] vol_music,
     input  logic         [3:0] vol_sfx,
     input  logic         [3:0] vol_speech,
@@ -191,7 +193,8 @@ module exidy_snd_mixer #(
     wire [1:0] mus_n = {1'b0, music[0]} + {1'b0, music[1]} + {1'b0, music[2]};
     wire signed [17:0] mus_x = $signed({1'b0, mus_n, 15'd0}) >>> 2;   // n * 8192
     logic signed [17:0] mus_y;
-    exidy_lp1 #(.DW(18)) lpm (.clk(clk), .rst(rst), .ce(ce), .bypass(mtrap), .coef(K_MUS), .x(mus_x), .y(mus_y));
+    // Victory: no music cap modelled (no schematic; its board has no filter latch, MAME has no filter)
+    exidy_lp1 #(.DW(18)) lpm (.clk(clk), .rst(rst), .ce(ce), .bypass(mtrap | tms_on), .coef(K_MUS), .x(mus_x), .y(mus_y));
 
     // ---------------- speech chain at E/8
     logic [2:0] sdiv;
@@ -216,7 +219,10 @@ module exidy_snd_mixer #(
 
     // filter output is U<<8; take U<<2 (x4 vs the 0.4 V/unit pre-scale -> ~1.6 V per MAME unit at the MC3417 output),
     // chosen so speech vs effects loudness is in the region of MAME's (#unverified, DOG VOLUME pot covers the rest)
-    wire signed [19:0] sp_u = sp_f2[25:6];
+    // Victory: MAME routes the board at 0.5 (one channel = 5461/32768) and the TMS at 1.0, so one TMS unit
+    // = 12 channel full-scales; channel full-scale is U = 8192 here -> sp_u = 3 * tms
+    wire signed [19:0] sp_tms = {{4{tms[15]}}, tms} + {{3{tms[15]}}, tms, 1'b0};
+    wire signed [19:0] sp_u   = tms_on ? sp_tms : sp_f2[25:6];
     wire unused_mix = &{1'b0, filt[7:6], sp_mul[30:29], sp_mul[2:0], sp_f2[5:0], sp_d2};
 
     // ---------------- mix

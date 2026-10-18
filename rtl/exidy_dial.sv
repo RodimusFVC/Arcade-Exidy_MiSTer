@@ -14,14 +14,16 @@ module exidy_dial
     input         [8:0] spinner,        // hps_io: [8] toggles per event, [7:0] signed delta
     input        [24:0] mouse,          // hps_io: [24] toggles per event, {[4], [15:8]} signed X
     input         [1:0] pad,            // {left, right}
+    input               fast,           // Car Polo: ~5 units per frame (MAME KEYDELTA 10, SENSITIVITY 50)
 
     output reg    [7:0] pos = 8'd0
 );
 
-// D-pad: one unit every 1/120 s while held (MAME KEYDELTA 30, SENSITIVITY 5) #unverified rate
+// D-pad: one unit every 1/120 s while held (MAME KEYDELTA 30, SENSITIVITY 5) #unverified rate;
+// Car Polo 1/300 s (its steering logic needs dial bit 0 to keep toggling between frames)
 reg [17:0] div = 18'd0;
 wire pad_tick = div == 18'd0;
-always @(posedge clk) div <= (div == 18'd188149) ? 18'd0 : div + 18'd1;
+always @(posedge clk) div <= (div >= (fast ? 18'd75259 : 18'd188149)) ? 18'd0 : div + 18'd1;
 
 reg spin_seen = 1'b0, mouse_seen = 1'b0;
 wire       spin_ev  = spinner[8] != spin_seen;
