@@ -105,7 +105,12 @@ module exidy_board
     input  logic [15:0] hs_address,
     input  logic  [7:0] hs_data_in,
     output logic  [7:0] hs_data_out,
-    input  logic        hs_write
+    input  logic        hs_write,
+
+    output logic        q_byte_en,      // Fax question ROMs from the DDR3 copy of index 0 (rtl/ram_rom/ddr_rom.sv byte port)
+    output logic [24:0] q_byte_addr,
+    input  logic  [7:0] q_byte_q,
+    input  logic        q_byte_rdy
 );
 
 /////////////////////////////  Clock enables  /////////////////////////////
@@ -118,6 +123,7 @@ always_ff @(posedge clk) begin
 end
 wire   ce_exi  = (ph == 2'd3);                          // 6502 boards: 4 clocks per pixel
 wire   main_ce = (cdiv == 5'd31) & ~pause;             // 11.289 MHz / 16
+logic  cpu_ce;                                          // main_ce, held while Fax waits for a question-ROM byte
 wire   circus  = (variant == 8'd7);
 wire   sf      = (variant == 8'd8) || (variant == 8'd9);
 wire   vic     = (variant == 8'd10);
@@ -184,7 +190,7 @@ logic [23:0] m_a24;
 
 T65 main_cpu
 (
-    .Mode(2'b00), .Res_n(~(reset | sf | vic)), .Enable(cp ? cp_ce : main_ce), .Clk(clk), .Rdy(1'b1), .Abort_n(1'b1),
+    .Mode(2'b00), .Res_n(~(reset | sf | vic)), .Enable(cp ? cp_ce : cpu_ce), .Clk(clk), .Rdy(1'b1), .Abort_n(1'b1),
     .IRQ_n(m_irq_n), .NMI_n(m_nmi_n), .SO_n(1'b1), .R_W_n(m_rw), .Sync(m_sync), .EF(), .MF(), .XF(), .ML_n(), .VP_n(),
     .VDA(), .VPA(), .A(m_a24), .DI(m_di), .DO(m_do), .Regs(), .NMI_ack()
 );
@@ -210,26 +216,53 @@ always_ff @(posedge clk)
 
 /////////////////////////////  Fax question ROMs  /////////////////////////////
 
+// ROOM-2026-10-24: original block below (192K of block RAM, used in full only by Fax / Fax 2). The question ROMs
+// (index 0 0x20000-0x4FFFF) are now read from the DDR3 copy of index 0; Victory keeps its 64K plane RAM + 16K ROM.
+// logic [17:0] qrom_a;
+// logic  [7:0] qrom_d, q0_d, q1_d;
+// wire load_q0 = ioctl_wr0 && ioctl_addr[24:17] == 8'h01;   // 0x20000-0x3FFFF: banks 0-15
+// wire load_q1 = ioctl_wr0 && ioctl_addr[24:16] == 9'h004;  // 0x40000-0x4FFFF: banks 16-23
+//
+// // Victory: qrom0 = foreground planes (port A engine, port B scan), qrom1 = main ROM 8000-BFFF (same load path)
+// dpram_dc #(.widthad_a(17)) qrom0
+// (
+//     .clock_a(clk), .address_a(vic ? v_fga_addr : ioctl_addr[16:0]), .data_a(vic ? v_fga_d : ioctl_dout),
+//     .wren_a(vic ? v_fga_we : load_q0), .q_a(v_fga_q),
+//     .clock_b(clk), .address_b(vic ? v_fgb_addr : qrom_a[16:0]), .q_b(q0_d)
+// );
+//
+// dpram_dc #(.widthad_a(16)) qrom1
+// (
+//     .clock_a(clk), .address_a(ioctl_addr[15:0]), .data_a(ioctl_dout), .wren_a(load_q1),
+//     .clock_b(clk), .address_b(vic ? {2'b00, z_a[13:0]} : qrom_a[15:0]), .q_b(q1_d)
+// );
+//
+// assign qrom_d = !qrom_a[17] ? q0_d : !qrom_a[16] ? q1_d : 8'hFF;   // banks 24-31 unpopulated
 logic [17:0] qrom_a;
 logic  [7:0] qrom_d, q0_d, q1_d;
-wire load_q0 = ioctl_wr0 && ioctl_addr[24:17] == 8'h01;   // 0x20000-0x3FFFF: banks 0-15
-wire load_q1 = ioctl_wr0 && ioctl_addr[24:16] == 9'h004;  // 0x40000-0x4FFFF: banks 16-23
+wire load_q1 = ioctl_wr0 && ioctl_addr[24:14] == 11'h010; // 0x40000-0x43FFF: Victory main ROM
 
-// Victory: qrom0 = foreground planes (port A engine, port B scan), qrom1 = main ROM 8000-BFFF (same load path)
-dpram_dc #(.widthad_a(17)) qrom0
+// Victory: qrom0 = foreground planes (port A engine, port B scan; addresses {0, plane, 14 bits}), qrom1 = main ROM 8000-BFFF
+dpram_dc #(.widthad_a(16)) qrom0
 (
-    .clock_a(clk), .address_a(vic ? v_fga_addr : ioctl_addr[16:0]), .data_a(vic ? v_fga_d : ioctl_dout),
-    .wren_a(vic ? v_fga_we : load_q0), .q_a(v_fga_q),
-    .clock_b(clk), .address_b(vic ? v_fgb_addr : qrom_a[16:0]), .q_b(q0_d)
+    .clock_a(clk), .address_a(v_fga_addr[15:0]), .data_a(v_fga_d), .wren_a(vic & v_fga_we), .q_a(v_fga_q),
+    .clock_b(clk), .address_b(v_fgb_addr[15:0]), .q_b(q0_d)
 );
 
-dpram_dc #(.widthad_a(16)) qrom1
+dpram_dc #(.widthad_a(14)) qrom1
 (
-    .clock_a(clk), .address_a(ioctl_addr[15:0]), .data_a(ioctl_dout), .wren_a(load_q1),
-    .clock_b(clk), .address_b(vic ? {2'b00, z_a[13:0]} : qrom_a[15:0]), .q_b(q1_d)
+    .clock_a(clk), .address_a(ioctl_addr[13:0]), .data_a(ioctl_dout), .wren_a(load_q1),
+    .clock_b(clk), .address_b(z_a[13:0]), .q_b(q1_d)
 );
 
-assign qrom_d = !qrom_a[17] ? q0_d : !qrom_a[16] ? q1_d : 8'hFF;   // banks 24-31 unpopulated
+// Fax: question ROM byte = index-0 byte 0x20000 + {bank, A12-A0}; banks 24-31 unpopulated (FF, no fetch).
+// The 6502 is held (cpu_ce) while a question-ROM read waits for its byte.
+wire q_unpop = qrom_a[17:16] == 2'b11;
+wire q_read  = !(circus || sf || vic || cp) && board_cfg[6] && m_rw && m_a[15:13] == 3'b001 && !q_unpop;  // exidy_main cfg[6] = Fax
+assign q_byte_en   = q_read;
+assign q_byte_addr = 25'h20000 + {7'd0, qrom_a};
+assign qrom_d      = q_unpop ? 8'hFF : q_byte_q;
+assign cpu_ce      = main_ce & ~(q_read & ~q_byte_rdy);
 
 /////////////////////////////  Logic board  /////////////////////////////
 
@@ -245,7 +278,7 @@ exidy_main main_b
 (
     .clk(clk), .reset(reset), .ph(ph), .ce_pix(ce_exi), .cfg(board_cfg), .cfg2(board_cfg2), .col_init(col_init),
     .ioctl_addr(ioctl_addr), .ioctl_dout(ioctl_dout), .ioctl_wr0(ioctl_wr0),
-    .cpu_ce(main_ce), .cpu_a(m_a), .cpu_do(m_do), .cpu_rw(m_rw), .cpu_di(e_di), .cpu_irq_n(e_irq_n),
+    .cpu_ce(cpu_ce), .cpu_a(m_a), .cpu_do(m_do), .cpu_rw(m_rw), .cpu_di(e_di), .cpu_irq_n(e_irq_n),
     .rom_d(rom_d), .qrom_a(qrom_a), .qrom_d(qrom_d), .spr_a(e_spr_a), .spr_d(spr_d),
     .pia_cs(pia_cs), .pia_dout(pia_dout),
     .in0(in0_b), .dsw(dsw), .in2(in2), .intsrc(intsrc), .in3(in3), .in4(in4), .in0_rd(in0_rd),
