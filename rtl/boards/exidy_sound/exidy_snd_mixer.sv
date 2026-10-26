@@ -16,6 +16,8 @@
 //   Mouse Trap: 3x10K, no cap.
 // Speech (Mouse Trap): MC3417 integrator (scale #unverified, see sp_u) -> C18/R20 HPF (159 Hz) -> two MFB
 //   LPF stages (10K/3.9K/18K/20n/2.2n: f0 2864 Hz, Q 0.874, gain 1.8 each).
+// Speech (Victory, Victory.pdf p58): TMS5220 -> R10 10K / C6 4300p pole loaded by the R12 10K / C7 .01u /
+//   R13 20K / R14 10K / C4 820p MFB LPF (3rd order: +2.0 dB at 2.9 kHz, -3 dB at 4.74 kHz, -15 dB at 8 kHz).
 // Mixer: (music*vm + sfx*vs + speech*vsp)/8, DC block (~8.7 Hz), 15.6 kHz 1-pole,
 //   /4 -> signed 16 (all three pots at 15 with all six channels high = 29k peak).
 // ============================================================================
@@ -193,7 +195,7 @@ module exidy_snd_mixer #(
     wire [1:0] mus_n = {1'b0, music[0]} + {1'b0, music[1]} + {1'b0, music[2]};
     wire signed [17:0] mus_x = $signed({1'b0, mus_n, 15'd0}) >>> 2;   // n * 8192
     logic signed [17:0] mus_y;
-    // Victory: no music cap modelled (no schematic; its board has no filter latch, MAME has no filter)
+    // Victory: no music cap (Victory.pdf p57-58: 3x10K straight into the MUSIC pot, no filter latch)
     exidy_lp1 #(.DW(18)) lpm (.clk(clk), .rst(rst), .ce(ce), .bypass(mtrap | tms_on), .coef(K_MUS), .x(mus_x), .y(mus_y));
 
     // ---------------- speech chain at E/8
@@ -222,8 +224,18 @@ module exidy_snd_mixer #(
     // Victory: MAME routes the board at 0.5 (one channel = 5461/32768) and the TMS at 1.0, so one TMS unit
     // = 12 channel full-scales; channel full-scale is U = 8192 here -> sp_u = 3 * tms
     wire signed [19:0] sp_tms = {{4{tms[15]}}, tms} + {{3{tms[15]}}, tms, 1'b0};
-    wire signed [19:0] sp_u   = tms_on ? sp_tms : sp_f2[25:6];
-    wire unused_mix = &{1'b0, filt[7:6], sp_mul[30:29], sp_mul[2:0], sp_f2[5:0], sp_d2};
+
+    // Victory speech filter at E/8: bilinear of the p58 network, split 1-pole (8.35 kHz) + biquad (f0 3.70 kHz,
+    // Q 1.22), unity DC gain per section so the level stays the MAME calibration above (step overshoot 1.22x)
+    logic signed [25:0] vf_1, vf_2;
+    logic vf_d1, vf_d2;
+    exidy_biquad #(.DW(26), .B0(27'sd3186876), .B1(27'sd3186876), .B2(27'sd0), .A1(-27'sd10403463), .A2(27'sd0))
+        bq_v1 (.clk(clk), .rst(rst), .start(sp_start), .x({sp_tms, 6'd0}), .y(vf_1), .done(vf_d1));
+    exidy_biquad #(.DW(26), .B0(27'sd165344), .B1(27'sd330688), .B2(27'sd165344), .A1(-27'sd30286043), .A2(27'sd14170203))
+        bq_v2 (.clk(clk), .rst(rst), .start(vf_d1),    .x(vf_1),            .y(vf_2), .done(vf_d2));
+
+    wire signed [19:0] sp_u   = tms_on ? vf_2[25:6] : sp_f2[25:6];
+    wire unused_mix = &{1'b0, filt[7:6], sp_mul[30:29], sp_mul[2:0], sp_f2[5:0], sp_d2, vf_2[5:0], vf_d2};
 
     // ---------------- mix
     wire signed [19:0] sfx_u = {{2{chy[0][17]}}, chy[0]} + {{2{chy[1][17]}}, chy[1]} + {{2{chy[2][17]}}, chy[2]};
