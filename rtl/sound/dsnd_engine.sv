@@ -4,6 +4,8 @@
 //  tools/dsnd.py) once per sample, so each discrete sound board costs a program, not logic.
 //  Ported from Arcade-SpaceInvaders_MiSTer rtl/dsnd_engine.sv. Exidy changes: 22.578 MHz clock (832 clocks per
 //  sample = 27.137 kHz), op 33 OUTR (right channel mix), out_r, sample strobe for box-averaged sources.
+//  MASTER (merged Exidy + Phoenix copies): TICK = clocks per sample (default 832 = Exidy 22.578 MHz / Space Invaders
+//  39.936 MHz; Phoenix instances with #(.TICK(917)) at 44 MHz). out_r / sample are optional (leave unconnected for mono).
 //  Copyright (C) 2026 Rodimus
 //
 //  Redistribution and use in source and synthesized forms, with or without
@@ -43,9 +45,9 @@
 // reaches 410 units.
 // Sources (b[5:3]): 0-5 board sources (see tools/dsnd_boards.py), 6 / 7 Game Audio settings; b[2:0] = bit.
 
-module dsnd_engine
+module dsnd_engine #(parameter int TICK = 832)
 (
-    input  logic        clk,            // 22.578 MHz
+    input  logic        clk,            // TICK x sample rate (Exidy 22.578 MHz / 832; Phoenix 44 MHz / 917)
     input  logic        reset,
     input  logic        pause,
     input  logic        prog_wr,        // MRA index 5 byte
@@ -101,7 +103,7 @@ dpram_dc #(.widthad_a(8), .width_a(32)) u_mb
 
 // sample timing
 logic [9:0] tick = 10'd0;
-wire        go = tick == 10'd831;
+wire        go = tick == 10'(TICK - 1);
 always_ff @(posedge clk) if (reset) tick <= 10'd0; else if (!pause) tick <= go ? 10'd0 : tick + 10'd1;
 assign sample = go & ~pause;
 

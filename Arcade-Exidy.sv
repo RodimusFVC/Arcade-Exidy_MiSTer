@@ -43,8 +43,6 @@ wire  [7:0] ioctl_din;
 wire        ioctl_wr;
 wire  [7:0] ioctl_index;
 wire        ddr_ioctl_wait;     // ddr_rom: index-0 byte being mirrored to DDR3
-// ART-2026-10-26: original
-// wire [24:0] ioctl_addr;
 wire [26:0] ioctl_addr27;                     // hps_io's full address: the artwork download can pass 32 MB
 wire [24:0] ioctl_addr = ioctl_addr27[24:0];  // every other ioctl user
 wire  [7:0] ioctl_dout;
@@ -149,9 +147,6 @@ wire [1:0] ar = status[9:8];
 wire        art_fb;                // artwork framebuffer on HDMI: square canvas pixels
 wire        art_ioctl_wait, art_avail;
 wire [11:0] art_cw, art_ch;
-// ART-2026-10-26: original
-// assign VIDEO_ARX = (!ar) ? (vert_view ? 12'd3 : 12'd4) : (ar - 1'd1);
-// assign VIDEO_ARY = (!ar) ? (vert_view ? 12'd4 : 12'd3) : 12'd0;
 assign VIDEO_ARX = (!ar) ? (art_fb ? art_cw : vert_view ? 12'd3 : 12'd4) : (ar - 1'd1);
 assign VIDEO_ARY = (!ar) ? (art_fb ? art_ch : vert_view ? 12'd4 : 12'd3) : 12'd0;
 
@@ -161,7 +156,7 @@ localparam CONF_STR = {
 	"EXIDY;;",
 	"P1,Video Options;",
 	"P1O89,Aspect Ratio,Original,Full screen,[ARC1],[ARC2];",
-	"P1OC,Orientation,Vert,Horz;",   // ORIENT-2026-10-26: fleet line (Universal); Horz turns the artwork view
+	"P1OC,Orientation,Vert,Horz;",   // Horz turns the artwork view
 	"P1OB,HDMI Flip,Off,On;",
 	"P1OM,CRT Flip,Off,On;",
 	"P1O[40:37],H Position (CRT),0,+1,+2,+3,+4,+5,+6,+7,-8,-7,-6,-5,-4,-3,-2,-1;",
@@ -176,8 +171,8 @@ localparam CONF_STR = {
 	"H1P5-,Paddle / spinner / mouse / stick;",
 	"H3P5-,Flight Stick;",
 	"H3P5O[75],Stick Mode,Flight Control,Standard Control;",
-	// ART-2026-10-26: MAME artwork, bits 80-89 (fleet OSD block range for artwork)
-	"H5P5-,Artwork (MAME layout views);",
+	// Artwork options, status bits 80-89
+	"H5P5-,Artwork (layout views);",
 	"H5P5O[83:80],View,Off,View 1,View 2,View 3,View 4,View 5,View 6,View 7,View 8,View 9,View 10,View 11,View 12,View 13,View 14,View 15;",
 	"H5P5O[84],Backdrop,On,Off;",
 	"H5P5O[85],Overlay,On,Off;",
@@ -224,23 +219,17 @@ hps_io #(.CONF_STR(CONF_STR)) hps_io
 
 	.buttons(buttons),
 	.status(status),
-	// ART-2026-10-26: original (bit 5 = artwork entries; the Game Options page also shows when the game has artwork)
-	// .status_menumask({~(game_flags[6] | game_sf), ~game_sf, ~ds_on, ~game_flags[6], direct_video}),
+	// menumask bit 5 = artwork entries; the Game Options page also shows when the game has artwork
 	.status_menumask({~art_avail, ~(game_flags[6] | game_sf | art_avail), ~game_sf, ~ds_on, ~game_flags[6], direct_video}),
 
 	.ioctl_download(ioctl_download),
 	.ioctl_upload(ioctl_upload),
 	.ioctl_upload_req(ioctl_upload_req),
 	.ioctl_wr(ioctl_wr),
-	// ART-2026-10-26: original
-	// .ioctl_addr(ioctl_addr),
 	.ioctl_addr(ioctl_addr27),
 	.ioctl_dout(ioctl_dout),
 	.ioctl_din(ioctl_din),
 	.ioctl_index(ioctl_index),
-	// ROOM-2026-10-24: original below
-	// .ioctl_wait(1'b0),
-	// ART-2026-10-26: was .ioctl_wait(ddr_ioctl_wait),
 	.ioctl_wait(ddr_ioctl_wait | art_ioctl_wait),
 
 	.joystick_0(joystick_0),
@@ -263,7 +252,7 @@ hps_io #(.CONF_STR(CONF_STR)) hps_io
 
 ////////////////////   CLOCKS   ///////////////////
 
-wire        CLK_2X;         // ART-2026-10-26: 45.156 MHz = 2 x CLK_SYS, same VCO (2:1 locked): artwork + video back end + DDRAM
+wire        CLK_2X;         // 45.156 MHz = 2 x CLK_SYS, same VCO (2:1 locked): artwork + video back end + DDRAM
 
 pll pll
 (
@@ -299,37 +288,7 @@ wire reset = RESET | status[0] | buttons[1] | ioctl_download | ~locked;
 
 ///////////////////         Keyboard           //////////////////
 
-// CTL-2026-10-25: keyboard -> controllers.sv ctl_keyboard (keys now act on press; paused, held keys keep tracking).
-// Original commented out below.
-// reg kb_up = 0, kb_down = 0, kb_left = 0, kb_right = 0;
-// reg kb_b1 = 0, kb_b2 = 0;
-// reg kb_coin1 = 0, kb_coin2 = 0, kb_start1 = 0, kb_start2 = 0, kb_pause = 0, kb_service = 0, kb_tilt = 0;
-//
-// wire       pressed = ~ps2_key[9];
-// wire [7:0] code    = ps2_key[7:0];
-//
-// always @(posedge CLK_SYS) begin
-// 	reg old_state;
-// 	old_state <= ps2_key[10];
-// 	if (old_state != ps2_key[10]) begin
-// 		case (code)
-// 			'h16: kb_start1  <= pressed; // 1
-// 			'h1E: kb_start2  <= pressed; // 2
-// 			'h2E: kb_coin1   <= pressed; // 5
-// 			'h36: kb_coin2   <= pressed; // 6
-// 			'h46: kb_service <= pressed; // 9
-// 			'h2C: kb_tilt    <= pressed; // T
-// 			'h4D: kb_pause   <= pressed; // P
-//
-// 			'h75: kb_up      <= pressed; // up
-// 			'h72: kb_down    <= pressed; // down
-// 			'h6B: kb_left    <= pressed; // left
-// 			'h74: kb_right   <= pressed; // right
-// 			'h14: kb_b1      <= pressed; // ctrl
-// 			'h11: kb_b2      <= pressed; // alt
-// 		endcase
-// 	end
-// end
+// Keyboard: controllers.sv ctl_keyboard (keys act on press; paused, held keys keep tracking).
 // kb: [0] up [1] down [2] left [3] right [4] Ctrl [5] Alt [6] 1 [7] 2 [8] 5 [9] 6 [10] 9 [11] T [12] P
 wire [12:0] kb;
 /* verilator lint_off UNUSED */
@@ -340,43 +299,18 @@ ctl_keyboard u_kb(.clk(CLK_SYS), .ps2_key(ps2_key), .pause(pause_cpu), .kb(kb), 
 //////////////////  Arcade Buttons/Interfaces   ///////////////////////////
 
 // Joystick bits: 0 R, 1 L, 2 D, 3 U, 4-7 Btn 1-4, 8 Coin, 9 Start 1P, 10 Start 2P, 11 Pause, 12-13 Btn 5-6, 14 Rack Test (unmapped)
-// CTL-2026-10-25: keyboard arrows from ctl_keyboard; 4-way restriction -> ctl_joy4way. Original commented out below.
-// wire [3:0] dir1_raw = {joystick_0[3] | kb_up, joystick_0[2] | kb_down, joystick_0[1] | kb_left, joystick_0[0] | kb_right};
+// Keyboard arrows from ctl_keyboard; 4-way restriction by ctl_joy4way.
 wire [3:0] dir1_raw = {joystick_0[3] | kb[0], joystick_0[2] | kb[1], joystick_0[1] | kb[2], joystick_0[0] | kb[3]};
 wire [3:0] dir2_raw = joystick_1[3:0];
 wire [3:0] dir1, dir2;   // {U, D, L, R}
 
-// joy4way joy4way_1(.clk(CLK_SYS), .en(game_flags[0]), .in(dir1_raw), .out(dir1));
-// joy4way joy4way_2(.clk(CLK_SYS), .en(game_flags[0]), .in(dir2_raw), .out(dir2));
 ctl_joy4way u_j4_1(.clk(CLK_SYS), .en(game_flags[0]), .in(dir1_raw), .out(dir1));
 ctl_joy4way u_j4_2(.clk(CLK_SYS), .en(game_flags[0]), .in(dir2_raw), .out(dir2));
 
-// CTL-2026-10-25: keyboard P from ctl_keyboard. Original commented out below.
-// wire m_pause = joystick_0[11] | kb_pause;
 wire m_pause = joystick_0[11] | kb[12];
 
-// MAME PORT_IMPULSE(2): a coin press is latched, then held for exactly two frames from the next vblank
-// CTL-2026-10-25: -> ctl_coin_impulse, paused with the CPU (PAUSE_MODE 1: the frame count holds, a press made while
-// paused is discarded). Original commented out below.
-// wire       coin1_raw = joystick_0[8] | kb_coin1;
-// wire       coin2_raw = joystick_1[8] | kb_coin2;
-// reg        coin1_d = 1'b0, coin2_d = 1'b0, coin1_pend = 1'b0, coin2_pend = 1'b0, imp_vbl = 1'b0;
-// reg  [1:0] coin1_frames = 2'd0, coin2_frames = 2'd0;
-// always @(posedge CLK_SYS) begin
-// 	coin1_d <= coin1_raw;
-// 	coin2_d <= coin2_raw;
-// 	imp_vbl <= vblank;
-// 	if (coin1_raw & ~coin1_d) coin1_pend <= 1'b1;
-// 	if (coin2_raw & ~coin2_d) coin2_pend <= 1'b1;
-// 	if (vblank & ~imp_vbl) begin
-// 		if (coin1_pend)                begin coin1_frames <= 2'd2; coin1_pend <= 1'b0; end
-// 		else if (coin1_frames != 2'd0) coin1_frames <= coin1_frames - 2'd1;
-// 		if (coin2_pend)                begin coin2_frames <= 2'd2; coin2_pend <= 1'b0; end
-// 		else if (coin2_frames != 2'd0) coin2_frames <= coin2_frames - 2'd1;
-// 	end
-// end
-// wire coin1 = game_flags[2] ? |coin1_frames : coin1_raw;
-// wire coin2 = game_flags[2] ? |coin2_frames : coin2_raw;
+// Coin pulse: a press is latched, then held for exactly two frames from the next vblank.
+// ctl_coin_impulse, paused with the CPU (PAUSE_MODE 1: the frame count holds, a press made while paused is discarded).
 wire coin1_raw = joystick_0[8] | kb[8];
 wire coin2_raw = joystick_1[8] | kb[9];
 wire coin1, coin2;
@@ -385,63 +319,19 @@ ctl_coin_impulse #(.FRAMES(4'd2), .PAUSE_MODE(1)) u_coin1(.clk(CLK_SYS), .pause(
 ctl_coin_impulse #(.FRAMES(4'd2), .PAUSE_MODE(1)) u_coin2(.clk(CLK_SYS), .pause(pause_cpu), .vblank(vblank),
 	.en(game_flags[2]), .coin_raw(coin2_raw), .coin(coin2));
 
-// Rack Test cheat: held (MAME DIP with a key), or flipped on each press (MAME PORT_TOGGLE)
-// CTL-2026-10-25: toggle -> ctl_toggle (presses ignored while paused). Original commented out below.
-// wire rack_btn = joystick_0[14] | joystick_1[14];
-// reg  rack_d = 1'b0, rack_tog = 1'b0;
-// always @(posedge CLK_SYS) begin
-// 	rack_d <= rack_btn;
-// 	if (ioctl_download)          rack_tog <= 1'b0;
-// 	else if (rack_btn & ~rack_d) rack_tog <= ~rack_tog;
-// end
+// Rack Test cheat: held, or flipped on each press (ctl_toggle; presses ignored while paused).
 wire rack_btn = joystick_0[14] | joystick_1[14];
 wire rack_tog;
 ctl_toggle u_rack(.clk(CLK_SYS), .clear(ioctl_download), .btn(rack_btn), .pause(pause_cpu), .q(rack_tog));
 
 // Twin stick (Crazy Climber pattern): right-hand stick = right analog stick, or Btn 3-6 = R Right / Left / Down / Up
-// CTL-2026-10-25: right-stick directions -> ctl_stick_dirs (+-48 per axis). Original commented out below.
-// wire signed [7:0] rx0 = joystick_r_analog_0[7:0], ry0 = joystick_r_analog_0[15:8];
-// wire signed [7:0] rx1 = joystick_r_analog_1[7:0], ry1 = joystick_r_analog_1[15:8];
-// wire [3:0] rstick0 = {ry0 < -8'sd48, ry0 > 8'sd48, rx0 < -8'sd48, rx0 > 8'sd48};   // {U, D, L, R}
-// wire [3:0] rstick1 = {ry1 < -8'sd48, ry1 > 8'sd48, rx1 < -8'sd48, rx1 > 8'sd48};
+// Right-stick directions from ctl_stick_dirs (+-48 per axis).
 wire [3:0] rstick0, rstick1;   // {U, D, L, R}
 ctl_stick_dirs #(.MODE(0), .THRESH(7'd48)) u_rs0(.stick(joystick_r_analog_0), .dir(rstick0));
 ctl_stick_dirs #(.MODE(0), .THRESH(7'd48)) u_rs1(.stick(joystick_r_analog_1), .dir(rstick1));
 
 // control ids used by the MRA input map (same numbering as the Pac-Man core; 24-31 reserved for analog)
-// CTL-2026-10-25: ids 0-35 -> ctl_ids (pad 2's Start = Start 2 only); ids 36-52 stay core-local. Original commented out below.
-// wire [63:0] ctl =
-// {
-// 	11'd0,
-// 	joystick_3[8],                                  // 52 coin 4 (P4 coin)
-// 	joystick_3[6:4],                                // 51-49 P4 Btn 3-1
-// 	joystick_2[6:4],                                // 48-46 P3 Btn 3-1
-// 	joystick_1[13] | rstick1[3],                    // 45 P2 R Up    (Btn 6)
-// 	joystick_1[12] | rstick1[2],                    // 44 P2 R Down  (Btn 5)
-// 	joystick_1[7]  | rstick1[1],                    // 43 P2 R Left  (Btn 4)
-// 	joystick_1[6]  | rstick1[0],                    // 42 P2 R Right (Btn 3)
-// 	joystick_0[13] | rstick0[3],                    // 41 P1 R Up    (Btn 6)
-// 	joystick_0[12] | rstick0[2],                    // 40 P1 R Down  (Btn 5)
-// 	joystick_0[7]  | rstick0[1],                    // 39 P1 R Left  (Btn 4)
-// 	joystick_0[6]  | rstick0[0],                    // 38 P1 R Right (Btn 3)
-// 	rack_tog,                                       // 37 rack test (toggle)
-// 	rack_btn,                                       // 36 rack test (held)
-// 	joystick_1[13:12],                              // 35-34 P2 Btn 6-5
-// 	joystick_0[13:12],                              // 33-32 P1 Btn 6-5
-// 	8'd0,                                           // 31-24 reserved
-// 	joystick_2[8],                                  // 23 coin 3 (P3 coin)
-// 	kb_service,                                     // 22 service
-// 	kb_tilt,                                        // 21 tilt
-// 	joystick_0[10] | joystick_1[10] | kb_start2,    // 20 start 2
-// 	joystick_0[9]  | joystick_1[9]  | kb_start1,    // 19 start 1
-// 	coin2,                                          // 18 coin 2
-// 	coin1,                                          // 17 coin 1
-// 	joystick_1[7:4],                                // 16-13 P2 Btn 4-1
-// 	dir2[0], dir2[1], dir2[2], dir2[3],             // 12 R, 11 L, 10 D, 9 U
-// 	joystick_0[7:6], joystick_0[5] | kb_b2, joystick_0[4] | kb_b1,   // 8-5 P1 Btn 4-1
-// 	dir1[0], dir1[1], dir1[2], dir1[3],             // 4 R, 3 L, 2 D, 1 U
-// 	1'b0                                            // 0 none
-// };
+// ids 0-35 come from ctl_ids (pad 2's Start = Start 2 only); ids 36-52 are core-local.
 wire [35:0] ids;
 ctl_ids u_ids(.joy0(joystick_0), .joy1(joystick_1), .kb(kb), .dir1(dir1), .dir2(dir2), .coin1(coin1), .coin2(coin2),
 	.coin3(joystick_2[8]), .ctl(ids));
@@ -471,31 +361,13 @@ always @(posedge CLK_SYS) begin
 		dip_sw[ioctl_addr[2:0]] <= ioctl_dout;
 end
 
-// CTL-2026-10-25: port loop -> controllers.sv ctl_port_map BASE_MODE 2. Original commented out below.
-// reg [7:0] in_port[8];
-// always @(posedge CLK_SYS) begin
-// 	for (int p = 0; p < 8; p++)
-// 		for (int b = 0; b < 8; b++)
-// 			in_port[p][b] <= (port_dip[p][7] ? port_idle[p][b] : dip_sw[port_dip[p][2:0]][dip_bit[p*8 + b]]) ^ ctl[in_map[p*8 + b]];
-// end
 // MRA input map -> board input ports (registered): port_dip[p][7] = 1 takes the idle byte, else DIP byte port_dip[p][2:0]
 // bit dip_bit[]; a pressed control (id in_map[]) inverts the bit
 wire   [7:0] in_port[8];
 wire  [63:0] pm_idle, pm_sel, pm_dips, pm_ports;
 wire [511:0] pm_map;
 wire [191:0] pm_dbit;
-// CTL2-2026-10-25: Quartus 17.0 rejects `for (genvar ...)` in the loop header (error 10170) and genvar b clashed
-// with wire b; genvars now declared at module scope inside generate. Original block:
-// for (genvar p = 0; p < 8; p++) begin : g_pm
-// 	assign pm_idle[p*8 +: 8] = port_idle[p];
-// 	assign pm_sel[p*8 +: 8]  = port_dip[p];
-// 	assign pm_dips[p*8 +: 8] = dip_sw[p];
-// 	assign in_port[p]        = pm_ports[p*8 +: 8];
-// 	for (genvar b = 0; b < 8; b++) begin : g_b
-// 		assign pm_map[(p*8 + b)*8 +: 8]  = {2'b00, in_map[p*8 + b]};
-// 		assign pm_dbit[(p*8 + b)*3 +: 3] = dip_bit[p*8 + b];
-// 	end
-// end
+// genvars are declared at module scope inside generate: Quartus 17.0 rejects `for (genvar ...)` in the loop header (error 10170).
 genvar pm_p, pm_b;
 generate
 	for (pm_p = 0; pm_p < 8; pm_p = pm_p + 1) begin : g_pm
@@ -527,16 +399,15 @@ pause #(8,8,8,20) pause
 
 wire hs, vs;
 wire [7:0] r, g, b;
-wire ce_pix;                       // ART-2026-10-26: CLK_2X pixel enable (art_xclk); the board's is bd_ce
+wire ce_pix;                       // CLK_2X pixel enable (art_xclk); the board's is bd_ce
 wire bd_ce;                        // board pixel enable (CLK_SYS)
 
 wire rotate_ccw = ~game_flags[7];  // ROT270 sets rotate CCW, ROT90 sets CW
 wire no_rotate  = ~game_vert | status[12] | direct_video;
 wire flip       = status[11];
 
-// ART-2026-10-26: video back end on CLK_2X (art_xclk -> artwork -> arcade_video / screen_rotate, CLK_VIDEO = CLK_2X,
-// DDRAM_CLK = CLK_2X); the board, pause, hiscore and ddr_rom stay on CLK_SYS. Same structure as the Universal core
-// (Claude/artwork_integration_2026-10-24.md there). ddr_arb shares the DDRAM port: screen_rotate, ddr_rom (bridged
+// Video back end on CLK_2X (art_xclk -> artwork -> arcade_video / screen_rotate, CLK_VIDEO = CLK_2X, DDRAM_CLK = CLK_2X);
+// the board, pause, hiscore and ddr_rom stay on CLK_SYS. ddr_arb shares the DDRAM port: screen_rotate, ddr_rom (bridged
 // from CLK_SYS, Fax question ROMs) and the artwork (bursts split, lowest priority). Artwork download = ioctl index 6
 // (5 is the discrete sound program).
 wire  [7:0] av_r, av_g, av_b;      // artwork output (CLK_2X): the board picture one pixel late, artwork applied
@@ -554,7 +425,7 @@ art_xclk #(.IDX(8'd6), .VW(28)) art_xclk
 	.ioctl_wait(art_ioctl_wait), .a_wr(a_wr), .a_addr(a_addr), .a_dout(a_dout), .art_wait(art_wait)
 );
 
-// MAME artwork (OSD Game Options page): native composite on the core video (one pixel late), full view through the
+// Artwork (OSD Game Options page): native composite on the core video (one pixel late), full view through the
 // DDR3 framebuffer on HDMI. CRT Flip: the board turns its picture 180 degrees through flip_fb. Every set is ROT0 and
 // the core has no Orientation entry, so turn is 0.
 wire        art_run;
@@ -567,8 +438,6 @@ artwork #(.IDX(8'd6)) artwork
 (
 	.clk(CLK_2X),
 	.sel(status[83:80]), .layer_off({status[87], status[86:84]}), .side_off(status[88]), .zoom(status[89]),
-	// ORIENT-2026-10-26: original
-	// .crt_flip(status[22]), .hdmi_flip(status[11]), .turn(1'b0), .avail(art_avail),
 	.crt_flip(status[22]), .hdmi_flip(status[11]), .turn(status[12]), .avail(art_avail),
 	.hdmi_w(HDMI_WIDTH), .hdmi_h(HDMI_HEIGHT),
 	.ioctl_download(ioctl_download), .ioctl_index(ioctl_index), .ioctl_wr(a_wr),
@@ -584,59 +453,6 @@ artwork #(.IDX(8'd6)) artwork
 );
 assign art_fb = art_run & ~direct_video;
 
-// ART-2026-10-26: original block (screen_rotate through ddr_rom on CLK_SYS, arcade_video on CLK_SYS) commented out:
-// // ROOM-2026-10-24: screen_rotate's DDR3 writes go through ddr_rom (shared port, Universal pattern). Original:
-// // screen_rotate screen_rotate(.*);
-// wire        sr_we;
-// wire [28:0] sr_addr;
-// wire [63:0] sr_din;
-// wire  [7:0] sr_be;
-// wire        ddr_byte_en, ddr_byte_rdy;
-// wire [24:0] ddr_byte_addr;
-// wire  [7:0] ddr_byte_q;
-//
-// screen_rotate screen_rotate
-// (
-// 	.CLK_VIDEO(CLK_VIDEO), .CE_PIXEL(CE_PIXEL),
-// 	.VGA_R(VGA_R), .VGA_G(VGA_G), .VGA_B(VGA_B), .VGA_HS(VGA_HS), .VGA_VS(VGA_VS), .VGA_DE(VGA_DE),
-// 	.rotate_ccw(rotate_ccw), .no_rotate(no_rotate), .flip(flip), .video_rotated(video_rotated),
-// 	.FB_EN(FB_EN), .FB_FORMAT(FB_FORMAT), .FB_WIDTH(FB_WIDTH), .FB_HEIGHT(FB_HEIGHT), .FB_BASE(FB_BASE),
-// 	.FB_STRIDE(FB_STRIDE), .FB_VBL(FB_VBL), .FB_LL(FB_LL),
-// 	.DDRAM_CLK(), .DDRAM_BUSY(1'b0), .DDRAM_BURSTCNT(), .DDRAM_ADDR(sr_addr), .DDRAM_DIN(sr_din),
-// 	.DDRAM_BE(sr_be), .DDRAM_WE(sr_we), .DDRAM_RD()
-// );
-//
-// // Every index-0 byte mirrored to DDR3 at 0x3C000000; Fax reads its question ROMs from there (byte port)
-// ddr_rom ddr_rom
-// (
-// 	.clk(CLK_SYS),
-// 	.ioctl_download(ioctl_download),
-// 	.ioctl_wr0(ioctl_wr & (ioctl_index == 8'd0)),
-// 	.ioctl_addr(ioctl_addr),
-// 	.ioctl_dout(ioctl_dout),
-// 	.ioctl_wait(ddr_ioctl_wait),
-// 	.row_req(1'b0), .row_addr(25'd0), .row_q(), .row_rdy(),
-// 	.byte_en(ddr_byte_en), .byte_addr(ddr_byte_addr), .byte_q(ddr_byte_q), .byte_rdy(ddr_byte_rdy),
-// 	.sr_we(sr_we), .sr_addr(sr_addr), .sr_din(sr_din), .sr_be(sr_be),
-// 	.DDRAM_CLK(DDRAM_CLK), .DDRAM_BUSY(DDRAM_BUSY), .DDRAM_BURSTCNT(DDRAM_BURSTCNT), .DDRAM_ADDR(DDRAM_ADDR),
-// 	.DDRAM_DOUT(DDRAM_DOUT), .DDRAM_DOUT_READY(DDRAM_DOUT_READY), .DDRAM_RD(DDRAM_RD), .DDRAM_DIN(DDRAM_DIN),
-// 	.DDRAM_BE(DDRAM_BE), .DDRAM_WE(DDRAM_WE)
-// );
-//
-// arcade_video #(256,24) arcade_video
-// (
-// 	.*,
-//
-// 	.clk_video(CLK_SYS),
-//
-// 	.RGB_in(rgb_out),
-// 	.HBlank(hblank),
-// 	.VBlank(vblank),
-// 	.HSync(hs),
-// 	.VSync(vs),
-//
-// 	.fx(status[18:16])
-// );
 
 wire        sr_fb_en;
 wire  [4:0] sr_fb_format;
@@ -669,9 +485,8 @@ assign FB_HEIGHT = art_fb ? art_ch      : sr_fb_h;
 assign FB_BASE   = art_fb ? art_fb_base : sr_fb_base;
 assign FB_STRIDE = art_fb ? 14'd8192    : sr_fb_stride;
 
-// Every index-0 byte mirrored to DDR3 at 0x3C000000; Fax reads its question ROMs from there (byte port).
-// ART-2026-10-26: its DDRAM port goes to ddr_arb's G port (bridged CLK_SYS -> CLK_2X); screen_rotate no longer
-// passes through it.
+// Every index-0 byte is mirrored to DDR3 at 0x3C000000; Fax reads its question ROMs from there (byte port).
+// Its DDRAM port goes to ddr_arb's G port (bridged CLK_SYS -> CLK_2X).
 wire        g_busy, g_dout_ready, g_rd, g_we;
 wire [63:0] g_dout, g_din;
 wire [28:0] g_addr;
@@ -692,7 +507,7 @@ ddr_rom ddr_rom
 	.DDRAM_BE(g_be), .DDRAM_WE(g_we)
 );
 
-// DDRAM port: screen_rotate > ddr_rom > artwork at every command slot (Universal's settings: artwork bursts split into
+// DDRAM port: screen_rotate > ddr_rom > artwork at every command slot (artwork bursts split into
 // 8-beat pieces, at most 64 artwork read beats in flight, 32 while the game read ROM data from DDR3 recently)
 ddr_arb #(.CHUNK(8), .RWIN(64), .RWIN_G(32), .G_HOLD(4096), .SDEPTH(8)) ddr_arb
 (
@@ -725,26 +540,8 @@ arcade_video #(256,24) arcade_video
 
 ///////////////                 Board                  ////////////////
 
-// CTL-2026-10-25: rtl/exidy_dial.sv -> controllers.sv ctl_tick (MODE 1 divider) + ctl_trackball (CW 8, D-pad step 1,
-// X reversed), both stopped while paused (counters hold, motion while paused is discarded). Original commented out below.
-// // Teeter Torture dial: spinner, mouse X, P1 D-pad left / right
-// wire [7:0] dial_pos;
-// exidy_dial exidy_dial
-// (
-// 	.clk(CLK_SYS),
-// 	.reset(reset),
-// 	.spinner(spinner_0),
-// 	.mouse(ps2_mouse),
-// 	.pad({dir1_raw[1], dir1_raw[0]}),
-// 	.fast(game_cp),
-// 	.pos(dial_pos)
-// );
-//
-// // Car Polo steering wheels P2-P4: spinner or D-pad left / right
-// wire [7:0] dial_p2, dial_p3, dial_p4;
-// exidy_dial dial_2(.clk(CLK_SYS), .reset(reset), .spinner(spinner_1), .mouse(25'd0), .pad(joystick_1[1:0]), .fast(1'b1), .pos(dial_p2));
-// exidy_dial dial_3(.clk(CLK_SYS), .reset(reset), .spinner(spinner_2), .mouse(25'd0), .pad(joystick_2[1:0]), .fast(1'b1), .pos(dial_p3));
-// exidy_dial dial_4(.clk(CLK_SYS), .reset(reset), .spinner(spinner_3), .mouse(25'd0), .pad(joystick_3[1:0]), .fast(1'b1), .pos(dial_p4));
+// Dials: ctl_tick (MODE 1 divider) + ctl_trackball (CW 8, D-pad step 1, X reversed), both stopped while paused
+// (counters hold, motion while paused is discarded).
 wire       ms_ev;
 wire [9:0] ms_dx;
 /* verilator lint_off UNUSED */
@@ -754,7 +551,7 @@ wire [2:0] ms_btn;
 ctl_mouse u_ms(.clk(CLK_SYS), .ps2_mouse(ps2_mouse), .ev(ms_ev), .dx(ms_dx), .dy(ms_dy), .btn(ms_btn));
 
 // Teeter Torture dial: spinner, mouse X, P1 D-pad left / right; D-pad one unit every 1/120 s (Car Polo 1/300 s)
-// (MAME IPT_DIAL PORT_REVERSE: clockwise / right counts down)
+// (clockwise / right counts down)
 wire       dial_tick1, dial_tick2;
 ctl_tick #(.MODE(1), .DW(18)) u_dt1(.clk(CLK_SYS), .pause(pause_cpu), .vblank(1'b0),
 	.period(game_cp ? 18'd75259 : 18'd188149), .tick(dial_tick1));
@@ -788,14 +585,7 @@ ctl_trackball #(.CW(8), .OUT_W(8), .DPAD_STEP(1)) u_dial4(.clk(CLK_SYS), .reset(
 wire [7:0] paddle_pos;
 wire       pad_rev  = game_flags[5] ^ status[61];
 wire [2:0] pad_sens = status[60:58];
-// CTL-2026-10-25: rtl/exidy_paddle.sv -> controllers.sv ctl_paddle (PAUSE_MODE 1: the position holds while paused and
-// jumps to the knob on resume if it was turned). Original commented out below.
-// exidy_paddle exidy_paddle
-// (
-// 	.clk(CLK_SYS), .reset(reset), .vblank(vblank), .sensitivity(pad_sens), .reverse(pad_rev),
-// 	.paddle(paddle_0), .spinner(spinner_0), .mouse(ps2_mouse), .stick_x(joystick_l_analog_0[7:0]),
-// 	.pad({dir1_raw[1], dir1_raw[0]}), .pos(paddle_pos)
-// );
+// ctl_paddle (PAUSE_MODE 1): the position holds while paused and jumps to the knob on resume if it was turned.
 wire pad_tick;
 ctl_tick #(.MODE(0)) u_pt(.clk(CLK_SYS), .pause(pause_cpu), .vblank(vblank), .period(18'd0), .tick(pad_tick));
 ctl_paddle #(.PMIN(8'd64), .PMAX(8'd167), .PCEN(8'd115), .PAUSE_MODE(1)) u_paddle
@@ -807,35 +597,24 @@ ctl_paddle #(.PMIN(8'd64), .PMAX(8'd167), .PCEN(8'd115), .PAUSE_MODE(1)) u_paddl
 
 // Star Fire stick (left analog / D-pad) and throttle (right analog Y / Btn 2 more, Btn 3 less)
 wire [7:0] sf_x, sf_y, sf_z;
-exidy_stick exidy_stick
-(
-	.clk(CLK_SYS),
-	.reset(reset),
-	.analog(joystick_l_analog_0),
-	.analog_r(joystick_r_analog_0),
-	.dpad(dir1_raw),
-	.thr_btn({joystick_0[5], joystick_0[6]}),
-	.std_ctl(status[75]),
-	.x(sf_x),
-	.y(sf_y),
-	.z(sf_z)
-);
+// ctl_ad_stick: stick centre 0x80, key delta 10 per frame,
+// autocentre by the same amount; Y reversed in Flight Control; Z throttle reversed and held (no autocentre).
+// Holds while paused.
+wire [7:0] sf_ay  = joystick_l_analog_0[15:8];
+wire [7:0] sf_ry  = joystick_r_analog_0[15:8];
+wire       sf_std = status[75];                  // 1 = Standard Control (Y not reversed)
+ctl_ad_stick #(.DZ(7'd16)) u_sf_x(.clk(CLK_SYS), .reset(reset), .pause(pause_cpu), .tick(pad_tick),
+	.rest(8'h80), .lo(8'h00), .hi(8'hFF), .keyd(8'd10), .stick(joystick_l_analog_0[7:0]),
+	.inc(dir1_raw[0]), .dec(dir1_raw[1]), .val(sf_x));
+ctl_ad_stick #(.DZ(7'd16)) u_sf_y(.clk(CLK_SYS), .reset(reset), .pause(pause_cpu), .tick(pad_tick),
+	.rest(8'h80), .lo(8'h00), .hi(8'hFF), .keyd(8'd10), .stick(sf_std ? sf_ay : 8'd0 - sf_ay),
+	.inc(sf_std ? dir1_raw[2] : dir1_raw[3]), .dec(sf_std ? dir1_raw[3] : dir1_raw[2]), .val(sf_y));
+ctl_ad_stick #(.DZ(7'd16), .HOLD(1'b1)) u_sf_z(.clk(CLK_SYS), .reset(reset), .pause(pause_cpu), .tick(pad_tick),
+	.rest(8'h80), .lo(8'h00), .hi(8'hFF), .keyd(8'd10), .stick(8'd0 - sf_ry),
+	.inc(joystick_0[5]), .dec(joystick_0[6]), .val(sf_z));
 
 // Fire One paddles 0-63: P1 paddle / left stick X / spinner / mouse / D-pad, P2 paddle / stick / spinner / D-pad
 wire [7:0] fo_p1, fo_p2;
-// CTL-2026-10-25: rtl/exidy_paddle.sv -> controllers.sv ctl_paddle (PAUSE_MODE 1). Original commented out below.
-// exidy_paddle #(.PMIN(8'd0), .PMAX(8'd63), .PCEN(8'd32)) fo_paddle1
-// (
-// 	.clk(CLK_SYS), .reset(reset), .vblank(vblank), .sensitivity(pad_sens), .reverse(pad_rev),
-// 	.paddle(paddle_0), .spinner(spinner_0), .mouse(ps2_mouse), .stick_x(joystick_l_analog_0[7:0]),
-// 	.pad({dir1_raw[1], dir1_raw[0]}), .pos(fo_p1)
-// );
-// exidy_paddle #(.PMIN(8'd0), .PMAX(8'd63), .PCEN(8'd32)) fo_paddle2
-// (
-// 	.clk(CLK_SYS), .reset(reset), .vblank(vblank), .sensitivity(pad_sens), .reverse(pad_rev),
-// 	.paddle(paddle_1), .spinner(spinner_1), .mouse(25'd0), .stick_x(joystick_l_analog_1[7:0]),
-// 	.pad({dir2_raw[1], dir2_raw[0]}), .pos(fo_p2)
-// );
 ctl_paddle #(.PMIN(8'd0), .PMAX(8'd63), .PCEN(8'd32), .PAUSE_MODE(1)) fo_paddle1
 (
 	.clk(CLK_SYS), .reset(reset), .pause(pause_cpu), .tick(pad_tick), .sensitivity(pad_sens), .reverse(pad_rev),
@@ -858,7 +637,6 @@ exidy_board board
 	.board_cfg(game_flags2),
 	.board_cfg2(game_cfg2),
 	.col_init({col_init[0], col_init[1], col_init[2]}),
-	// ART-2026-10-26: was .ce_pix(ce_pix),
 	.ce_pix(bd_ce),
 
 	.in0(in_port[0]),
@@ -964,32 +742,3 @@ hiscore #(
 
 endmodule
 
-// CTL-2026-10-25: local joy4way replaced by ctl_joy4way (rtl/mister_custom/controllers.sv). Original commented out below.
-// // 4-way joystick: the most recently pressed direction wins (from the MiSTer Pac-Man port)
-// module joy4way
-// (
-// 	input        clk,
-// 	input        en,
-// 	input  [3:0] in,
-// 	output [3:0] out
-// );
-//
-// reg  [3:0] mask = 4'hF;
-// reg  [3:0] in1 = 0, in2 = 0;
-// wire [3:0] innew = in1 & ~in2;
-//
-// assign out = in1 & mask;
-//
-// always @(posedge clk) begin
-// 	in1 <= in;
-// 	in2 <= in1;
-//
-// 	if (innew[0]) mask <= 4'b0001;
-// 	if (innew[1]) mask <= 4'b0010;
-// 	if (innew[2]) mask <= 4'b0100;
-// 	if (innew[3]) mask <= 4'b1000;
-//
-// 	if (!(in & mask) || !en) mask <= 4'hF;
-// end
-//
-// endmodule

@@ -16,9 +16,9 @@ module starfire_snd
     input  logic        fireone,      // 0 = Star Fire (mono), 1 = Fire One (stereo)
     input  logic        cpu_ce,       // Z80 clock enable, 2.5 MHz average (8253 clock)
     input  logic        snd_wr,       // one-clk pulse: CPU write to sound latch
-    input  logic        snd_a0,       // which latch (MAME sound_w offset & 1)
+    input  logic        snd_a0,       // which latch (address bit 0)
     input  logic        music_wr,     // one-clk pulse: Fire One 8253 write
-    input  logic  [1:0] music_a,      // 8253 register (MAME music_w offset)
+    input  logic  [1:0] music_a,      // 8253 register (address)
     input  logic  [7:0] din,
     output logic        tie_on_n,     // Star Fire input port 1 bit 3 (0 while TIE sound active)
     output logic        laser_on_n,   // Star Fire input port 1 bit 4
@@ -29,7 +29,11 @@ module starfire_snd
     output logic signed [15:0] audio_r,  // Star Fire: same as audio_l
     output logic  [7:0] lat0,         // Star Fire latch / Fire One offset 0 latch (discrete sound engine sources)
     output logic  [7:0] lat1,         // Fire One offset 1 latch
-    output logic  [2:0] pit_q         // Fire One 8253 outputs
+    output logic  [2:0] pit_q,        // Fire One 8253 outputs
+
+    // the Fire One 8253 is the dispatcher's pool slot pit8253_0 (shared with the sound board)
+    output chip_pool_pkg::pit8253_i_t pit8253_i,
+    input  chip_pool_pkg::pit8253_o_t pit8253_o
 );
 
     // BEGIN CONSTS
@@ -215,7 +219,7 @@ module starfire_snd
     //   Star Fire (both offsets): D0 SIZE, D1 EXPLOSION, D2 TIE, D3 LASER, D4 TRACK, D5 LOCK, D6 SCANNER, D7 OVERHEAT
     //   Fire One  offset 0: D0 L TORP, D1 L PARTIAL HIT, D2 L BOOM, D3 player select, D4-D6 8253 GATE0-2, D7 SOUND OFF
     //             offset 1: D0 R TORP, D1 R PARTIAL HIT, D2 R BOOM, D3 TORP COLLISION, D4 SUB ENGINE, D5 ALERT,
-    //                       D6 SONAR SYNC, D7 noise clock enable (MAME 'sonar_enable' = ~D7 drives the switch POS)
+    //                       D6 SONAR SYNC, D7 noise clock enable (~D7 drives the switch POS)
     logic [7:0] sfl, l0, l1;
     always_ff @(posedge clk) begin
         if (reset) begin
@@ -250,23 +254,20 @@ module starfire_snd
     wire f_sub    = fo & l1[4];
     wire f_alert  = fo & l1[5];
     wire f_sync   = l1[6];
-    wire f_sonen  = l1[7];                          // noise clock runs while D7 = 1 (MAME: SONAR_ENABLE.POS = ~D7)
+    wire f_sonen  = l1[7];                          // noise clock runs while D7 = 1 (switch POS = ~D7)
 
     // ======================================================================
     // Fire One 8253 (music A/B/C), clocked at the CPU clock
     // ======================================================================
     logic [2:0] pit_out;
-    pit8253 u_pit
-    (
-        .clk    (clk),
-        .rst    (reset),
-        .wr_en  (music_wr & fireone),
-        .a      (music_a),
-        .din    (din),
-        .clk_ce (cpu_ce),
-        .gate   (l0[6:4]),
-        .out    (pit_out)
-    );
+    // pool slot pit8253_0 (dispatcher)
+    assign pit8253_i.rst    = reset;
+    assign pit8253_i.wr_en  = music_wr & fireone;
+    assign pit8253_i.a      = music_a;
+    assign pit8253_i.din    = din;
+    assign pit8253_i.clk_ce = cpu_ce;
+    assign pit8253_i.gate   = l0[6:4];
+    assign pit_out = pit8253_o.out;
     assign pit_q = pit_out;
 
     // ======================================================================
@@ -493,7 +494,7 @@ module starfire_snd
             7'd78: begin a_n = q(son);                         b_n = GSON;   end
             7'd79: begin a_n = q(al);                          b_n = GAL;    end
             7'd80: begin a_n = q(o1);                          b_n = GBM;    end
-            7'd81: begin a_n = q(pl2l + pl2r);                 b_n = GSH;    end   // both partial hits feed MIX_L (MAME netlist)
+            7'd81: begin a_n = q(pl2l + pl2r);                 b_n = GSH;    end   // both partial hits feed MIX_L
             7'd82: begin a_n = q(vtgl);                        b_n = GTP;    end
             7'd83: begin a_n = q(o2);                          b_n = GBM;    end
             7'd84: begin a_n = q(vtgr);                        b_n = GTP;    end

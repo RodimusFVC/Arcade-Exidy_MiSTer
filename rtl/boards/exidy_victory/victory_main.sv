@@ -5,12 +5,12 @@
 //  64-entry 9-bit palette, collision IRQs. Same 336 x 280 raster at 5.6448 MHz as the 6502 boards.
 //  Copyright (C) 2026 Rodimus
 //
-//  Foreground planes live in the pooled 128K BRAM (exidy_board qrom0): R at 0x00000, G at 0x04000,
+//  Foreground planes live in RAM pool blocks 0 / 1 (exidy_board): R at 0x00000, G at 0x04000,
 //  B at 0x08000. Port A = microcode engine, port B = scan-out.
-//  The engine follows MAME's command semantics; BUSY (C004.7) follows MAME's state count x 8 clocks
+//  The engine implements the board's command semantics; BUSY (C004.7) is a timer of the command's state count x 8 clocks
 //  of 11.289 MHz. The engine is faster than that; a CPU access to C000-C1FF (except the C004 status poll)
-//  while it still runs waits (WAIT_n), so the CPU always sees a finished command, as with MAME.
-//  Scan-out is live (MAME composes the frame at vblank).
+//  while it still runs waits (WAIT_n), so the CPU always sees a finished command.
+//  Scan-out is live (the frame is not composed at vblank).
 //
 //============================================================================
 
@@ -67,7 +67,12 @@ module victory_main
     input  logic  [7:0] nv_din,
     output logic  [7:0] nv_dout,        // ioctl upload data for nv_addr
     input  logic        nv_saved,       // an upload has run: contents are on the SD card
-    output logic        nv_dirty        // CMOS RAM changed since load / last save (asks Main to save)
+    output logic        nv_dirty,       // CMOS RAM changed since load / last save (asks Main to save)
+
+    // board RAM pool (rtl/ram_pool_pkg.sv, dispatcher): 2 char RAM, 3 work / CMOS RAM, 4 tile RAM
+    // (blocks 0 / 1 = foreground planes, driven by the dispatcher from fg_a / fg_b)
+    output ram_pool_pkg::pram_i_t [5:0] pr_i,
+    input  ram_pool_pkg::pram_o_t [5:0] pr_o
 );
 
 /////////////////////////////  Z80 clock: 4 MHz from 22.578 MHz  /////////////////////////////
@@ -136,21 +141,34 @@ logic [9:0]  tile_sa;
 logic [12:0] char_sa;
 wire  [12:0] char_ca = z_a[12:0] - 13'h0800;                // C800 -> 0000, D000 -> 0800, D800 -> 1000
 
-dpram_dc #(.widthad_a(10)) tile_ram
-(
-    .clock_a(clk), .address_a(z_a[9:0]), .data_a(z_do), .wren_a(wr_go & r_tile), .q_a(tile_q),
-    .clock_b(clk), .address_b(tile_sa), .data_b(8'h00), .wren_b(1'b0), .q_b(tile_sq)
-);
-dpram_dc #(.widthad_a(13)) char_ram
-(
-    .clock_a(clk), .address_a(char_ca), .data_a(z_do), .wren_a(wr_go & r_char), .q_a(char_q),
-    .clock_b(clk), .address_b(char_sa), .data_b(8'h00), .wren_b(1'b0), .q_b(char_sq)
-);
-dpram_dc #(.widthad_a(13)) work_ram
-(
-    .clock_a(clk), .address_a(z_a[12:0]), .data_a(z_do), .wren_a(wr_go & r_ram), .q_a(ram_q),
-    .clock_b(clk), .address_b({2'b10, nv_addr}), .data_b(nv_din), .wren_b(nv_wr), .q_b(nv_dout)
-);
+// tile / char / work RAM = pool blocks 4 / 2 / 3
+assign pr_i[0] = '0;
+assign pr_i[1] = '0;
+assign pr_i[5] = '0;
+// block 2: char RAM (A = CPU, B = scan)
+assign pr_i[2].a_addr = {2'd0, char_ca};
+assign pr_i[2].a_d    = z_do;
+assign pr_i[2].a_we   = wr_go & r_char;
+assign pr_i[2].b_addr = {2'd0, char_sa};
+assign pr_i[2].b_d    = 8'h00;
+assign pr_i[2].b_we   = 1'b0;
+// block 3: work RAM, F000-F7FF = CMOS (A = CPU, B = MiSTer NVRAM load / save)
+assign pr_i[3].a_addr = {2'd0, z_a[12:0]};
+assign pr_i[3].a_d    = z_do;
+assign pr_i[3].a_we   = wr_go & r_ram;
+assign pr_i[3].b_addr = {4'b0010, nv_addr};
+assign pr_i[3].b_d    = nv_din;
+assign pr_i[3].b_we   = nv_wr;
+// block 4: tile RAM (A = CPU, B = scan)
+assign pr_i[4].a_addr = {5'd0, z_a[9:0]};
+assign pr_i[4].a_d    = z_do;
+assign pr_i[4].a_we   = wr_go & r_tile;
+assign pr_i[4].b_addr = {5'd0, tile_sa};
+assign pr_i[4].b_d    = 8'h00;
+assign pr_i[4].b_we   = 1'b0;
+assign {char_q, char_sq} = {pr_o[2].a_q, pr_o[2].b_q};
+assign {ram_q, nv_dout}  = {pr_o[3].a_q, pr_o[3].b_q};
+assign {tile_q, tile_sq} = {pr_o[4].a_q, pr_o[4].b_q};
 
 // CMOS RAM is "dirty" when the CPU writes a different value into F000-F7FF (ram_q = the old byte)
 always_ff @(posedge clk) begin
@@ -158,7 +176,7 @@ always_ff @(posedge clk) begin
     else if (wr_go && z_a[15:11] == 5'b11110 && z_do != ram_q)      nv_dirty <= 1'b1;
 end
 
-// palette: 64 x 9 bits, stored as (A7 << 8) | data; MAME pen colour = R(8:6) G(2:0) B(5:3)
+// palette: 64 x 9 bits, stored as (A7 << 8) | data; pen colour = R(8:6) G(2:0) B(5:3)
 logic [8:0] pal [0:63];
 always_ff @(posedge clk) if (wr_go && r_pal) pal[z_a[5:0]] <= {z_a[7], z_do};
 function automatic [8:0] pen_rgb(input [8:0] p);
@@ -176,7 +194,7 @@ logic [23:0] busy_cnt = 24'd0;
 
 assign z_int_n = ~(vblank_irq | fgcoll | (bgcoll & vctrl[5]));
 
-// microcode registers (MAME micro_t)
+// microcode registers
 logic [15:0] mi = 16'd0;
 logic  [8:0] mpc = 9'd0;
 logic  [7:0] mr = 8'd0, mg = 8'd0, mb = 8'd0, mxp = 8'd0, myp = 8'd0, mcmd = 8'd0;
@@ -213,7 +231,7 @@ logic  [8:0] lcnt;
 logic  [6:0] c6_n;
 logic  [7:0] f_cmd, f_ib, f_ir, f_r, f_x;
 
-// MAME inctable[octant] = {xinc, yinc, xincc, yincc}
+// octant increment table: = {xinc, yinc, xincc, yincc}
 function automatic [7:0] linc(input [2:0] oct, input carry, input isy);
     case ({oct, carry, isy})
         5'b000_0_0: linc = 8'd1;   5'b000_0_1: linc = 8'd0;   5'b000_1_0: linc = 8'd1;   5'b000_1_1: linc = 8'hFF;
@@ -227,7 +245,7 @@ function automatic [7:0] linc(input [2:0] oct, input carry, input isy);
     endcase
 endfunction
 
-// MAME plane order inside a unit: G, B, R
+// plane order inside a unit: G, B, R
 function automatic [1:0] first_plane(input [2:0] en);       // en = {R, B, G}
     first_plane = en[0] ? 2'd1 : en[1] ? 2'd2 : 2'd0;
 endfunction
@@ -241,11 +259,11 @@ endfunction
 wire [2:0]  cmd_en = {mcmd[6], mcmd[5], mcmd[4]};           // {R, B, G}
 wire [7:0]  sh_r   = pv >> pl_sh;
 wire [15:0] sh_lw  = {8'd0, pv} << (4'd8 - {1'b0, pl_sh});
-wire [7:0]  sh_l   = sh_lw[7:0];                            // MAME: uint8 ^= v << (8 - shift)
+wire [7:0]  sh_l   = sh_lw[7:0];                            // 8-bit: ^= v << (8 - shift)
 
 wire [8:0]  c5_s    = {1'b0, lacc} + {1'b0, mi[15:8]};      // Bresenham accumulator + IH
 
-// MAME count_states for each command (microcode states)
+// state count for each command (microcode states)
 wire [6:0]  c3_rows = 7'd64 - {1'b0, mr[4:0], 1'b0};
 wire [3:0]  c3_cols = 4'd8 - {1'b0, mr[7:5]};
 wire [11:0] st_c3   = 12'd3 + (12'd2 + {4'd0, c3_rows, 1'b0}) * {8'd0, c3_cols};
@@ -253,7 +271,7 @@ wire [11:0] st_c5   = 12'd3 + {2'd0, 9'd256 - {1'b0, mi[7:0]}, 1'b0};
 wire [11:0] st_c6   = 12'd3 + {4'd0, c3_rows, 1'b0};
 
 // CPU access to the video registers waits while the engine runs, except the C004 status read: the game times
-// BUSY by polling it (its interrupt test counts polls), and BUSY is MAME's state-count timer, not the engine.
+// BUSY by polling it (its interrupt test counts polls), and BUSY is a state-count timer, not the engine.
 // The engine is faster than that timer for every command, so it is done before BUSY drops.
 wire v_acc = ~z_mreq_n & (r_vwr | (r_vrd & (z_a[7:0] != 8'h04)));
 assign z_wait_n = ~(v_acc & eng_run);
@@ -318,7 +336,7 @@ always_ff @(posedge clk) begin
                     3'd5: begin
                         busy_add <= st_c5; busy_add_en <= 1'b1;
                         lx <= mxp; ly <= myp; lacc <= 8'h80; lcnt <= 9'd256 - {1'b0, mi[7:0]};
-                        c5_coll <= mcmd[3] & ~fgcoll;           // MAME picks the branch once per vector
+                        c5_coll <= mcmd[3] & ~fgcoll;           // the branch is picked once per vector
                         est <= E_C5_PT;
                     end
                     3'd6: begin
@@ -362,7 +380,7 @@ always_ff @(posedge clk) begin
                     pl_sa   <= mi[13:0];
                     pl_da   <= {1'b0, c3_sy, mxp[7:3]};
                     pl_sh   <= mxp[2:0];
-                    pl_coll <= mcmd[3] & ~fgcoll;               // MAME picks the branch per row
+                    pl_coll <= mcmd[3] & ~fgcoll;               // the branch is picked per row
                     pl_hit  <= 1'b0;
                     mi      <= mi + 16'd1;
                     c3_sy   <= c3_sy + 8'd1;
@@ -580,7 +598,7 @@ always_ff @(posedge clk) begin
     end
 end
 
-// background collision: MAME times an IRQ at every overlapping pixel, up to 128 per frame
+// background collision: an IRQ is timed at every overlapping pixel, up to 128 per frame
 always_ff @(posedge clk) begin
     if (reset) begin bgcoll <= 1'b0; bgcoll_cnt <= 8'd0; end
     else begin

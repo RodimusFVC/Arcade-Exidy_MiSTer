@@ -10,7 +10,7 @@
 //    0: Venture-type logic board + audio/colour board (venture)
 //    1: Mouse Trap (adds the Z80 / MC3417 speech section)
 //    2: Pepper II-type logic board (2bpp plane board, character RAM 6000) (pepper2, hardhat)
-//    3: Teeter Torture (Venture + dial on IN0 bits 2 / 6 + MAME's 600 Hz NMI)
+//    3: Teeter Torture (Venture + dial on IN0 bits 2 / 6 + 600 Hz NMI)
 //    4: Fax (Pepper II + question ROM banks; the map is board config bit 6)
 //    5: gen-1 board + Targ audio board (targ, targc)
 //    6: gen-1 board + Spectar-type audio board (spectar, sidetrac, rallys, panzer, phantoma)
@@ -18,11 +18,11 @@
 //    8: Star Fire, 9: Fire One (rtl/boards/exidy_starfire: Z80 = the pooled T80pa, bitmap video)
 //   10: Victory (rtl/boards/exidy_victory: Z80 = the pooled T80pa, microcode video; Fax's question-ROM BRAMs
 //       hold its foreground planes and ROM 8000-BFFF; Venture sound board in Victory mode)
-//   11: Car Polo (rtl/boards/exidy_carpolo: main 6502 at 940.75 kHz, collision checker, no sound in MAME)
+//   11: Car Polo (rtl/boards/exidy_carpolo: main 6502 at 940.75 kHz, collision checker)
 //  Gen-1 map options are board config 2 (index 1 byte 2), see exidy_main.sv.
 //  Board config bits (index 1 byte 3) are documented in rtl/boards/exidy6502/exidy_main.sv.
 //
-//  ioctl index 0 (MRA), MAME regions:
+//  ioctl index 0 (MRA), ROM regions:
 //    0x00000 - 0x07FFF  maincpu (offset & 0x7FFF: 8000-FFFF program, Targ-era 0800-3FFF lands below 0x4000)
 //    0x08000 - 0x0FFFF  soundbd:audiocpu (ROMs 5800-7FFF)
 //    0x10000 - 0x13FFF  soundbd:cvsdcpu
@@ -70,7 +70,7 @@ module exidy_board
     input  logic        ioctl_wr0,
 
     input  logic        crt_flip,
-    input  logic        overlay_en,     // Circus family cabinet colour overlay (MAME layouts)
+    input  logic        overlay_en,     // Circus family cabinet colour overlay (layouts)
     input  logic  [3:0] h_adj,
     input  logic  [3:0] v_adj,
 
@@ -182,23 +182,148 @@ dpram_dc #(.widthad_a(11)) rom_spr
     .clock_b(clk), .address_b(spr_a), .q_b(spr_d)
 );
 
-/////////////////////////////  Main 6502  /////////////////////////////
+// The boards' ROMs. Load decode by index-0 address only (never by variant: index 1 arrives after the ROMs); two boards
+// that load the same window share a block.
+//   rom_cp0,  2K at 0x15800: Circus-family character PROM (port B) | Car Polo goal ROM, first 256 B (ports A and B)
+//   rom_cp1,  1K at 0x16000: Circus-family line PROMs 4D / 5D (port B) | Car Polo alphanumeric ROM, first 512 B (port A)
+//   rom_snd, 16K at 0x0C000: sound board 6502 ROM (CPU 4000-7FFF)
+//   rom_cvsd, 16K at 0x10000: Mouse Trap CVSD Z80 ROM; also 0x40000: Victory main ROM 8000-BFFF (same pooled Z80)
+logic [10:0] c_chr_a;
+logic  [9:0] c_lp_a;
+logic  [7:0] p_goal_sa, p_goal_ca;
+logic  [8:0] p_alpha_a;
+logic [13:0] sb_snd_rom_a, sb_cvsd_rom_a;
+logic  [7:0] rom_cp0_qa, rom_cp0_qb, rom_cp1_qa, rom_cp1_qb, rom_snd_q, rom_cvsd_q;
+wire load_cp0  = ioctl_wr0 && ioctl_addr[24:11] == 14'h2B;                            // 0x15800-0x15FFF
+wire load_cp1  = ioctl_wr0 && ioctl_addr[24:10] == 15'h58;                            // 0x16000-0x163FF
+wire load_snd  = ioctl_wr0 && ioctl_addr[24:14] == 11'd3;                             // 0x0C000-0x0FFFF
+wire load_cvsd = ioctl_wr0 && (ioctl_addr[24:14] == 11'd4 || ioctl_addr[24:14] == 11'h010);   // 0x10000 / 0x40000
 
+dpram_dc #(.widthad_a(11)) rom_cp0
+(
+    .clock_a(clk), .address_a(ioctl_wr0 ? ioctl_addr[10:0] : {3'd0, p_goal_sa}), .data_a(ioctl_dout), .wren_a(load_cp0),
+    .q_a(rom_cp0_qa),
+    .clock_b(clk), .address_b(cp ? {3'd0, p_goal_ca} : c_chr_a), .data_b(8'h00), .wren_b(1'b0), .q_b(rom_cp0_qb)
+);
+dpram_dc #(.widthad_a(10)) rom_cp1
+(
+    .clock_a(clk), .address_a(ioctl_wr0 ? ioctl_addr[9:0] : {1'b0, p_alpha_a}), .data_a(ioctl_dout), .wren_a(load_cp1),
+    .q_a(rom_cp1_qa),
+    .clock_b(clk), .address_b(c_lp_a), .data_b(8'h00), .wren_b(1'b0), .q_b(rom_cp1_qb)
+);
+dpram_dc #(.widthad_a(14)) rom_snd
+(
+    .clock_a(clk), .address_a(ioctl_addr[13:0]), .data_a(ioctl_dout), .wren_a(load_snd), .q_a(),
+    .clock_b(clk), .address_b(sb_snd_rom_a), .data_b(8'h00), .wren_b(1'b0), .q_b(rom_snd_q)
+);
+dpram_dc #(.widthad_a(14)) rom_cvsd
+(
+    .clock_a(clk), .address_a(ioctl_addr[13:0]), .data_a(ioctl_dout), .wren_a(load_cvsd), .q_a(),
+    .clock_b(clk), .address_b(sb_cvsd_rom_a), .data_b(8'h00), .wren_b(1'b0), .q_b(rom_cvsd_q)
+);
+
+/////////////////////////////  Shared CPU / sound chip pool  /////////////////////////////
+// chip_pool_pkg buses. Every CPU / sound engine exists once, here; the boards keep their own signal names
+// (m_*, snd_*, z_*), which drive / read these buses.
+
+// t65_0: main 6502 (Venture / Pepper II / Mouse Trap / Teeter / Fax logic boards, gen-1, Circus family, Car Polo)
 logic  [7:0] m_do, m_di;
 logic        m_rw, m_irq_n, m_sync, m_nmi_n;
-logic [23:0] m_a24;
-
-T65 main_cpu
+chip_pool_pkg::t65_i_t t65_0_i;
+chip_pool_pkg::t65_o_t t65_0_o;
+logic [23:0] t65_0_a24;
+assign t65_0_i.res_n  = ~(reset | sf | vic);
+assign t65_0_i.enable = cp ? cp_ce : cpu_ce;
+assign t65_0_i.rdy    = 1'b1;
+assign t65_0_i.irq_n  = m_irq_n;
+assign t65_0_i.nmi_n  = m_nmi_n;
+assign t65_0_i.di     = m_di;
+T65 t65_0
 (
-    .Mode(2'b00), .Res_n(~(reset | sf | vic)), .Enable(cp ? cp_ce : cpu_ce), .Clk(clk), .Rdy(1'b1), .Abort_n(1'b1),
-    .IRQ_n(m_irq_n), .NMI_n(m_nmi_n), .SO_n(1'b1), .R_W_n(m_rw), .Sync(m_sync), .EF(), .MF(), .XF(), .ML_n(), .VP_n(),
-    .VDA(), .VPA(), .A(m_a24), .DI(m_di), .DO(m_do), .Regs(), .NMI_ack()
+    .Mode(2'b00), .Res_n(t65_0_i.res_n), .Enable(t65_0_i.enable), .Clk(clk), .Rdy(t65_0_i.rdy), .Abort_n(1'b1),
+    .IRQ_n(t65_0_i.irq_n), .NMI_n(t65_0_i.nmi_n), .SO_n(1'b1), .R_W_n(t65_0_o.rw), .Sync(m_sync),  // Sync: harness probe
+    .EF(), .MF(), .XF(), .ML_n(), .VP_n(), .VDA(), .VPA(), .A(t65_0_a24), .DI(t65_0_i.di), .DO(t65_0_o.dout), .Regs(),
+    .NMI_ack()
 );
-assign m_a = m_a24[15:0];
+assign t65_0_o.a = t65_0_a24[15:0];
+assign m_a  = t65_0_o.a;
+assign m_do = t65_0_o.dout;
+assign m_rw = t65_0_o.rw;
+
+// Sound chips. Each board drives its own bus (its own reset on rst); the variant picks the owner:
+//   pia6821[0] / [1]: Venture-type sound board main-side / sound-side PIA (variants 0-4, 10) | Car Polo pia0 / pia1 (11)
+//   pit8253_0:        sound board music 8253 | Fire One music 8253 (variants 8 / 9; Star Fire leaves it idle)
+//   riot6532_0, ptm6840_0, mc3417_0, tms5220rsws_0: Venture-type sound board only
+// (The sound board is held in reset on gen-1 / Circus / Star Fire / Car Polo, so its slots are free there.)
+chip_pool_pkg::pia6821_i_t [1:0] sb_pia6821_i, cp_pia6821_i, pia6821_i;
+chip_pool_pkg::pia6821_o_t [1:0] pia6821_o;
+chip_pool_pkg::pit8253_i_t       sb_pit8253_i, sf_pit8253_i, pit8253_0_i;
+chip_pool_pkg::pit8253_o_t       pit8253_0_o;
+chip_pool_pkg::riot6532_i_t      riot6532_0_i;
+chip_pool_pkg::riot6532_o_t      riot6532_0_o;
+chip_pool_pkg::ptm6840_i_t       ptm6840_0_i;
+chip_pool_pkg::ptm6840_o_t       ptm6840_0_o;
+chip_pool_pkg::mc3417_i_t        mc3417_0_i;
+chip_pool_pkg::mc3417_o_t        mc3417_0_o;
+chip_pool_pkg::tms5220rsws_i_t   tms5220rsws_0_i;
+chip_pool_pkg::tms5220rsws_o_t   tms5220rsws_0_o;
+assign pia6821_i   = cp ? cp_pia6821_i : sb_pia6821_i;
+assign pit8253_0_i = sf ? sf_pit8253_i : sb_pit8253_i;
+
+genvar pi;
+generate
+    for (pi = 0; pi < 2; pi++) begin : g_pia6821
+        pia6821 u
+        (
+            .clk(clk), .rst(pia6821_i[pi].rst), .ce(pia6821_i[pi].ce), .cs(pia6821_i[pi].cs), .rw(pia6821_i[pi].rw),
+            .rs(pia6821_i[pi].rs), .din(pia6821_i[pi].din), .dout(pia6821_o[pi].dout),
+            .irqa(pia6821_o[pi].irqa), .irqb(pia6821_o[pi].irqb),
+            .pa_i(pia6821_i[pi].pa_i), .pa_o(pia6821_o[pi].pa_o), .pa_oe(pia6821_o[pi].pa_oe),
+            .ca1(pia6821_i[pi].ca1), .ca2_i(pia6821_i[pi].ca2_i), .ca2_o(pia6821_o[pi].ca2_o), .ca2_oe(pia6821_o[pi].ca2_oe),
+            .pb_i(pia6821_i[pi].pb_i), .pb_o(pia6821_o[pi].pb_o), .pb_oe(pia6821_o[pi].pb_oe),
+            .cb1(pia6821_i[pi].cb1), .cb2_i(pia6821_i[pi].cb2_i), .cb2_o(pia6821_o[pi].cb2_o), .cb2_oe(pia6821_o[pi].cb2_oe)
+        );
+    end
+endgenerate
+
+pit8253 pit8253_0
+(
+    .clk(clk), .rst(pit8253_0_i.rst), .wr_en(pit8253_0_i.wr_en), .a(pit8253_0_i.a), .din(pit8253_0_i.din),
+    .clk_ce(pit8253_0_i.clk_ce), .gate(pit8253_0_i.gate), .out(pit8253_0_o.out)
+);
+
+riot6532 riot6532_0
+(
+    .clk(clk), .rst(riot6532_0_i.rst), .ce(riot6532_0_i.ce), .ram_cs(riot6532_0_i.ram_cs), .io_cs(riot6532_0_i.io_cs),
+    .rw(riot6532_0_i.rw), .a(riot6532_0_i.a), .din(riot6532_0_i.din), .dout(riot6532_0_o.dout), .irq(riot6532_0_o.irq),
+    .pa_i(riot6532_0_i.pa_i), .pa_pins(riot6532_0_o.pa_pins), .pb_i(riot6532_0_i.pb_i), .pb_pins(riot6532_0_o.pb_pins)
+);
+
+ptm6840 ptm6840_0
+(
+    .clk(clk), .rst(ptm6840_0_i.rst), .ce(ptm6840_0_i.ce), .cs(ptm6840_0_i.cs), .rw(ptm6840_0_i.rw), .rs(ptm6840_0_i.rs),
+    .din(ptm6840_0_i.din), .dout(ptm6840_0_o.dout), .cx(ptm6840_0_i.cx), .o(ptm6840_0_o.o), .irq(ptm6840_0_o.irq)
+);
+
+logic signed [23:0] mc3417_0_integ;
+mc3417 mc3417_0
+(
+    .clk(clk), .rst(mc3417_0_i.rst), .bclk(mc3417_0_i.bclk), .din(mc3417_0_i.din), .integ(mc3417_0_integ)
+);
+assign mc3417_0_o.integ = mc3417_0_integ;
+
+logic signed [15:0] tms5220rsws_0_audio;
+tms5220_rsws #(.CLK_HZ(22578000), .TMS_HZ(640000)) tms5220rsws_0
+(
+    .clk(clk), .reset(tms5220rsws_0_i.reset), .pause(tms5220rsws_0_i.pause),
+    .rs_n(tms5220rsws_0_i.rs_n), .ws_n(tms5220rsws_0_i.ws_n), .d_in(tms5220rsws_0_i.d_in), .d_out(tms5220rsws_0_o.d_out),
+    .ready_n(tms5220rsws_0_o.ready_n), .int_n(tms5220rsws_0_o.int_n), .audio(tms5220rsws_0_audio)
+);
+assign tms5220rsws_0_o.audio = tms5220rsws_0_audio;
 
 /////////////////////////////  Teeter Torture: NMI + dial  /////////////////////////////
 
-// MAME set_periodic_int(nmi_line_pulse, 10 * 60 Hz) #unverified (prototype, no schematic)
+// NMI pulse at 10 * 60 Hz #unverified (prototype, no schematic)
 wire        teeter = (variant == 8'd3);
 logic [15:0] nmi_div = 16'd0;
 always_ff @(posedge clk) if (!pause) nmi_div <= (nmi_div == 16'd37629) ? 16'd0 : nmi_div + 16'd1;
@@ -216,77 +341,75 @@ always_ff @(posedge clk)
 
 /////////////////////////////  Fax question ROMs  /////////////////////////////
 
-// ROOM-2026-10-24: original block below (192K of block RAM, used in full only by Fax / Fax 2). The question ROMs
-// (index 0 0x20000-0x4FFFF) are now read from the DDR3 copy of index 0; Victory keeps its 64K plane RAM + 16K ROM.
-// logic [17:0] qrom_a;
-// logic  [7:0] qrom_d, q0_d, q1_d;
-// wire load_q0 = ioctl_wr0 && ioctl_addr[24:17] == 8'h01;   // 0x20000-0x3FFFF: banks 0-15
-// wire load_q1 = ioctl_wr0 && ioctl_addr[24:16] == 9'h004;  // 0x40000-0x4FFFF: banks 16-23
-//
-// // Victory: qrom0 = foreground planes (port A engine, port B scan), qrom1 = main ROM 8000-BFFF (same load path)
-// dpram_dc #(.widthad_a(17)) qrom0
-// (
-//     .clock_a(clk), .address_a(vic ? v_fga_addr : ioctl_addr[16:0]), .data_a(vic ? v_fga_d : ioctl_dout),
-//     .wren_a(vic ? v_fga_we : load_q0), .q_a(v_fga_q),
-//     .clock_b(clk), .address_b(vic ? v_fgb_addr : qrom_a[16:0]), .q_b(q0_d)
-// );
-//
-// dpram_dc #(.widthad_a(16)) qrom1
-// (
-//     .clock_a(clk), .address_a(ioctl_addr[15:0]), .data_a(ioctl_dout), .wren_a(load_q1),
-//     .clock_b(clk), .address_b(vic ? {2'b00, z_a[13:0]} : qrom_a[15:0]), .q_b(q1_d)
-// );
-//
-// assign qrom_d = !qrom_a[17] ? q0_d : !qrom_a[16] ? q1_d : 8'hFF;   // banks 24-31 unpopulated
+// The Fax question ROMs (index 0 0x20000-0x4FFFF) are read from the DDR3 copy of index 0.
 logic [17:0] qrom_a;
 logic  [7:0] qrom_d, q0_d, q1_d;
 wire load_q1 = ioctl_wr0 && ioctl_addr[24:14] == 11'h010; // 0x40000-0x43FFF: Victory main ROM
 
 // Victory: qrom0 = foreground planes (port A engine, port B scan; addresses {0, plane, 14 bits}), qrom1 = main ROM 8000-BFFF
-// REUSE-2026-10-26: the three planes need 48K, not 64K (plane index is 0-2 on both ports, A15-A14 never 11): 32K
-// (R, G) + 16K (B), read data muxed by the bank bit registered with the address (dpram_dc: registered address,
-// unregistered q). Original below, uncomment (and drop the split) to restore:
-// dpram_dc #(.widthad_a(16)) qrom0
-// (
-//     .clock_a(clk), .address_a(v_fga_addr[15:0]), .data_a(v_fga_d), .wren_a(vic & v_fga_we), .q_a(v_fga_q),
-//     .clock_b(clk), .address_b(v_fgb_addr[15:0]), .q_b(q0_d)
-// );
-logic [7:0] q0l_qa, q0l_qb, q0h_qa, q0h_qb;
+// The three planes need 48K (plane index is 0-2 on both ports, A15-A14 never 11): 32K (R, G) + 16K (B), read data
+// muxed by the bank bit registered with the address (dpram_dc: registered address, unregistered q).
 logic       fga_hi = 1'b0, fgb_hi = 1'b0;
 always_ff @(posedge clk) begin
     fga_hi <= v_fga_addr[15];
     fgb_hi <= v_fgb_addr[15];
 end
-// RAM pool: Star Fire's vram_e / vram_o banks use these two blocks (Star Fire and Victory never run together)
-logic [47:0] sf_pr_aa;
-logic [31:0] sf_pr_ad, sf_pr_qa, sf_pr_qb;
-logic  [3:0] sf_pr_aw;
-logic [11:0] sf_pr_ba;
-dpram_dc #(.widthad_a(15)) qrom0_rg
-(
-    .clock_a(clk), .address_a(sf ? {3'b000, sf_pr_aa[11:0]} : v_fga_addr[14:0]), .data_a(sf ? sf_pr_ad[7:0] : v_fga_d),
-    .wren_a(sf ? sf_pr_aw[0] : vic & v_fga_we & ~v_fga_addr[15]), .q_a(q0l_qa),
-    .clock_b(clk), .address_b(sf ? {3'b000, sf_pr_ba} : v_fgb_addr[14:0]), .data_b(8'h00), .wren_b(1'b0), .q_b(q0l_qb)
-);
-dpram_dc #(.widthad_a(14)) qrom0_b
-(
-    .clock_a(clk), .address_a(sf ? {2'b00, sf_pr_aa[23:12]} : v_fga_addr[13:0]), .data_a(sf ? sf_pr_ad[15:8] : v_fga_d),
-    .wren_a(sf ? sf_pr_aw[1] : vic & v_fga_we & v_fga_addr[15]), .q_a(q0h_qa),
-    .clock_b(clk), .address_b(sf ? {2'b00, sf_pr_ba} : v_fgb_addr[13:0]), .data_b(8'h00), .wren_b(1'b0), .q_b(q0h_qb)
-);
-logic [15:0] sf_lend_qa, sf_lend_qb;     // banks 2 / 3 from the sound board's ROM blocks
-assign sf_pr_qa = {sf_lend_qa, q0h_qa, q0l_qa};
-assign sf_pr_qb = {sf_lend_qb, q0h_qb, q0l_qb};
-assign v_fga_q = fga_hi ? q0h_qa : q0l_qa;
-assign q0_d    = fgb_hi ? q0h_qb : q0l_qb;
 
-// REUSE-2026-10-26: Victory's main ROM 8000-BFFF now lives in the sound board's cvsd_rom (same pooled Z80, same
-// z_a[13:0] port; Victory has no CVSD): one 16K block fewer. Original below, uncomment (and drop the assign) to restore:
-// dpram_dc #(.widthad_a(14)) qrom1
-// (
-//     .clock_a(clk), .address_a(ioctl_addr[13:0]), .data_a(ioctl_dout), .wren_a(load_q1),
-//     .clock_b(clk), .address_b(z_a[13:0]), .q_b(q1_d)
-// );
+/////////////////////////////  Shared RAM pool  /////////////////////////////
+// Only one board runs at a time (plus the sound board with its logic board), so the boards' RAMs
+// share six true dual-port blocks (rtl/ram_pool_pkg.sv; two read / write ports each, one clock to q as dpram_dc).
+// Each block is sized to its largest user; the owner is picked by variant.
+//   block 0, 32K: Victory foreground planes R / G (addr bit 15 = 0)   | Star Fire vram_e
+//   block 1, 16K: Victory foreground plane B (addr bit 15 = 1)         | Star Fire vram_o
+//   block 2,  8K: Victory char RAM | Star Fire cram_e | logic-board char plane 0 (its index-0 preload always wins)
+//   block 3,  8K: Victory work / CMOS RAM | Star Fire cram_o | logic-board char plane 1
+//   block 4,  2K: Victory tile RAM | Car Polo work RAM | logic-board work RAM (port B = hiscore)
+//   block 5,  1K: Victory sound-board RAM 0080-00FF | Circus screen RAM | Car Polo alpha RAM | logic-board screen RAM
+// Not pooled: Circus work RAM (POOL-EXCEPTION in circus_main.sv: power-on fill before the variant is known).
+localparam RAM_BLOCKS = 6;
+ram_pool_pkg::pram_i_t [RAM_BLOCKS-1:0] e_pr_i, c_pr_i, sf_pr_i, vic_pr_i, cp_pr_i, sb_pr_i, vpl_pr_i, pool_i;
+ram_pool_pkg::pram_o_t [RAM_BLOCKS-1:0] pool_o;
+logic e_cram_load;
+
+// Victory foreground planes: 48K over blocks 0 / 1, read data muxed by the bank bit registered with the address
+assign vpl_pr_i[0].a_addr = v_fga_addr[14:0];
+assign vpl_pr_i[0].a_d    = v_fga_d;
+assign vpl_pr_i[0].a_we   = vic & v_fga_we & ~v_fga_addr[15];
+assign vpl_pr_i[0].b_addr = v_fgb_addr[14:0];
+assign vpl_pr_i[0].b_d    = 8'h00;
+assign vpl_pr_i[0].b_we   = 1'b0;
+assign vpl_pr_i[1].a_addr = {1'b0, v_fga_addr[13:0]};
+assign vpl_pr_i[1].a_d    = v_fga_d;
+assign vpl_pr_i[1].a_we   = vic & v_fga_we & v_fga_addr[15];
+assign vpl_pr_i[1].b_addr = {1'b0, v_fgb_addr[13:0]};
+assign vpl_pr_i[1].b_d    = 8'h00;
+assign vpl_pr_i[1].b_we   = 1'b0;
+assign vpl_pr_i[5:2] = '0;
+assign v_fga_q = fga_hi ? pool_o[1].a_q : pool_o[0].a_q;
+assign q0_d    = fgb_hi ? pool_o[1].b_q : pool_o[0].b_q;
+
+assign pool_i[0] = sf ? sf_pr_i[0] : vpl_pr_i[0];
+assign pool_i[1] = sf ? sf_pr_i[1] : vpl_pr_i[1];
+assign pool_i[2] = e_cram_load ? e_pr_i[2] : sf ? sf_pr_i[2] : vic ? vic_pr_i[2] : e_pr_i[2];
+assign pool_i[3] = sf ? sf_pr_i[3] : vic ? vic_pr_i[3] : e_pr_i[3];
+assign pool_i[4] = vic ? vic_pr_i[4] : cp ? cp_pr_i[4] : e_pr_i[4];
+assign pool_i[5] = vic ? sb_pr_i[5] : circus ? c_pr_i[5] : cp ? cp_pr_i[5] : e_pr_i[5];
+
+genvar rp;
+generate
+    for (rp = 0; rp < RAM_BLOCKS; rp++) begin : rpool
+        localparam int AW = (rp == 0) ? 15 : (rp == 1) ? 14 : (rp < 4) ? 13 : (rp == 4) ? 11 : 10;
+        dpram_dc #(.widthad_a(AW)) ram
+        (
+            .clock_a(clk), .address_a(pool_i[rp].a_addr[AW-1:0]), .data_a(pool_i[rp].a_d), .wren_a(pool_i[rp].a_we),
+            .q_a(pool_o[rp].a_q),
+            .clock_b(clk), .address_b(pool_i[rp].b_addr[AW-1:0]), .data_b(pool_i[rp].b_d), .wren_b(pool_i[rp].b_we),
+            .q_b(pool_o[rp].b_q)
+        );
+    end
+endgenerate
+
+// Victory's main ROM 8000-BFFF lives in the sound board's cvsd_rom (same pooled Z80, same z_a[13:0] port; Victory has no CVSD).
 logic [7:0] z_rom_q;
 assign q1_d = z_rom_q;
 wire unused_q1 = &{1'b0, load_q1};
@@ -321,7 +444,8 @@ exidy_main main_b
     .coin1(coin[0]), .coin2(coin[1]),
     .pix_x(e_pix_x), .pix_y(e_pix_y), .pix_rgb(e_pix_rgb), .vbl_irq_raw(e_vblank_raw),
     .hs_a(hs_address[9:0]), .hs_din(hs_data_in), .hs_dout(e_hs_dout),
-    .hs_we(hs_write && hs_address[15:10] == 6'd0 && !circus)
+    .hs_we(hs_write && hs_address[15:10] == 6'd0 && !circus),
+    .pr_i(e_pr_i), .pr_o(pool_o), .cram_load(e_cram_load)
 );
 
 /////////////////////////////  Circus-family logic board  /////////////////////////////
@@ -332,14 +456,15 @@ logic       c_latch_wr;
 circus_main circus_b
 (
     .clk(clk), .reset(reset), .ph(ph), .ce_pix(ce_exi), .cfg(board_cfg),
-    .ioctl_addr(ioctl_addr), .ioctl_dout(ioctl_dout), .ioctl_wr0(ioctl_wr0),
     .cpu_ce(main_ce), .cpu_a(m_a), .cpu_do(m_do), .cpu_rw(m_rw), .cpu_di(c_di), .cpu_irq_n(c_irq_n),
     .rom_d(rom_d), .spr_a(c_spr_a), .spr_d(spr_d),
     .in0(in0), .dsw(dsw), .paddle(paddle),
     .out_latch(c_latch), .out_wr(c_latch_wr),
     .pix_x(c_pix_x), .pix_y(c_pix_y), .pix_rgb(c_pix_rgb), .vbl_irq_raw(c_vblank_raw),
     .hs_a(hs_address[9:0]), .hs_din(hs_data_in), .hs_dout(c_hs_dout),
-    .hs_we(hs_write && hs_address[15:10] == 6'd0 && circus)
+    .hs_we(hs_write && hs_address[15:10] == 6'd0 && circus),
+    .pr_i(c_pr_i), .pr_o(pool_o),
+    .chr_rom_a(c_chr_a), .chr_rom_q(rom_cp0_qb), .lp_rom_a(c_lp_a), .lp_rom_q(rom_cp1_qb)
 );
 
 assign m_di        = cp ? p_di    : circus ? c_di        : e_di;
@@ -367,12 +492,24 @@ logic        snd_ce, snd_rw, snd_irq_n;
 logic [23:0] snd_a24;
 logic  [7:0] snd_do, snd_di;
 
-T65 snd_cpu
+// pool slot t65_1 (sound board 6502: Venture-type sound board, variants 0-4 / 10)
+chip_pool_pkg::t65_i_t t65_1_i;
+chip_pool_pkg::t65_o_t t65_1_o;
+assign t65_1_i.res_n  = ~snd_rst;
+assign t65_1_i.enable = snd_ce;
+assign t65_1_i.rdy    = 1'b1;
+assign t65_1_i.irq_n  = snd_irq_n;
+assign t65_1_i.nmi_n  = 1'b1;
+assign t65_1_i.di     = snd_di;
+T65 t65_1
 (
-    .Mode(2'b00), .Res_n(~snd_rst), .Enable(snd_ce), .Clk(clk), .Rdy(1'b1), .Abort_n(1'b1),
-    .IRQ_n(snd_irq_n), .NMI_n(1'b1), .SO_n(1'b1), .R_W_n(snd_rw), .Sync(), .EF(), .MF(), .XF(), .ML_n(), .VP_n(),
-    .VDA(), .VPA(), .A(snd_a24), .DI(snd_di), .DO(snd_do), .Regs(), .NMI_ack()
+    .Mode(2'b00), .Res_n(t65_1_i.res_n), .Enable(t65_1_i.enable), .Clk(clk), .Rdy(t65_1_i.rdy), .Abort_n(1'b1),
+    .IRQ_n(t65_1_i.irq_n), .NMI_n(t65_1_i.nmi_n), .SO_n(1'b1), .R_W_n(t65_1_o.rw), .Sync(), .EF(), .MF(), .XF(),
+    .ML_n(), .VP_n(), .VDA(), .VPA(), .A(snd_a24), .DI(t65_1_i.di), .DO(t65_1_o.dout), .Regs(), .NMI_ack()
 );
+assign t65_1_o.a = snd_a24[15:0];
+assign snd_do    = t65_1_o.dout;
+assign snd_rw    = t65_1_o.rw;
 
 logic        z_cen_p, z_cen_n, z_reset_n;
 logic  [7:0] z_do, z_di, snd_z_di, sf_z_di, v_z_di;
@@ -380,33 +517,51 @@ logic        z_mreq_n, z_iorq_n, z_rd_n, z_wr_n, z_m1_n, sf_nmi_n;
 logic        v_cen_p, v_cen_n, v_int_n, v_wait_n;
 
 // one Z80: Mouse Trap's CVSD speech CPU, or the Star Fire / Fire One / Victory main CPU
-T80pa #(.Mode(0)) speech_cpu
+// pool slot z80pa_0 (master z80pa type)
+chip_pool_pkg::z80pa_i_t z80pa_0_i;
+chip_pool_pkg::z80pa_o_t z80pa_0_o;
+// every enable source pauses at its origin (phase held), so CEN_p / CEN_n keep alternating across a pause
+assign z80pa_0_i.reset_n = (sf | vic) ? ~reset : z_reset_n;
+assign z80pa_0_i.cen_p   = sf ? sf_cen_p : vic ? v_cen_p : z_cen_p;
+assign z80pa_0_i.cen_n   = sf ? sf_cen_n : vic ? v_cen_n : z_cen_n;
+assign z80pa_0_i.wait_n  = vic ? v_wait_n : 1'b1;
+assign z80pa_0_i.int_n   = vic ? v_int_n : 1'b1;
+assign z80pa_0_i.nmi_n   = sf ? sf_nmi_n : 1'b1;
+assign z80pa_0_i.di      = z_di;
+T80pa #(.Mode(0)) z80pa_0
 (
-    // every enable source pauses at its origin (phase held), so CEN_p / CEN_n keep alternating across a pause
-    .RESET_n((sf | vic) ? ~reset : z_reset_n), .CLK(clk),
-    .CEN_p(sf ? sf_cen_p : vic ? v_cen_p : z_cen_p), .CEN_n(sf ? sf_cen_n : vic ? v_cen_n : z_cen_n),
-    .WAIT_n(vic ? v_wait_n : 1'b1), .INT_n(vic ? v_int_n : 1'b1), .NMI_n(sf ? sf_nmi_n : 1'b1),
-    .BUSRQ_n(1'b1), .M1_n(z_m1_n), .MREQ_n(z_mreq_n), .IORQ_n(z_iorq_n), .RD_n(z_rd_n), .WR_n(z_wr_n),
-    .RFSH_n(), .HALT_n(), .BUSAK_n(), .OUT0(1'b0), .A(z_a), .DI(z_di), .DO(z_do),
-    .R800_mode(1'b0), .REG(), .DIRSet(1'b0), .DIR(212'd0)
+    .RESET_n(z80pa_0_i.reset_n), .CLK(clk), .CEN_p(z80pa_0_i.cen_p), .CEN_n(z80pa_0_i.cen_n),
+    .WAIT_n(z80pa_0_i.wait_n), .INT_n(z80pa_0_i.int_n), .NMI_n(z80pa_0_i.nmi_n),
+    .BUSRQ_n(1'b1), .M1_n(z80pa_0_o.m1_n), .MREQ_n(z80pa_0_o.mreq_n), .IORQ_n(z80pa_0_o.iorq_n), .RD_n(z80pa_0_o.rd_n),
+    .WR_n(z80pa_0_o.wr_n), .RFSH_n(z80pa_0_o.rfsh_n), .HALT_n(), .BUSAK_n(), .OUT0(1'b0), .A(z80pa_0_o.a),
+    .DI(z80pa_0_i.di), .DO(z80pa_0_o.dout), .R800_mode(1'b0), .REG(), .DIRSet(1'b0), .DIR(212'd0)
 );
+assign z_a      = z80pa_0_o.a;
+assign z_do     = z80pa_0_o.dout;
+assign z_m1_n   = z80pa_0_o.m1_n;
+assign z_mreq_n = z80pa_0_o.mreq_n;
+assign z_iorq_n = z80pa_0_o.iorq_n;
+assign z_rd_n   = z80pa_0_o.rd_n;
+assign z_wr_n   = z80pa_0_o.wr_n;
 
 exidy_sndbd snd_b
 (
     .clk(clk), .reset(snd_rst), .pause(pause), .cvsd_en(variant == 8'd1),
-    .ioctl_addr(ioctl_addr), .ioctl_dout(ioctl_dout), .ioctl_wr0(ioctl_wr0),
     .main_ce(main_ce), .main_pia_cs(pia_cs), .main_rw(m_rw), .main_a(m_a[1:0]), .main_din(m_do), .main_dout(pia_dout),
-    .snd_ce(snd_ce), .snd_a(snd_a24[15:0]), .snd_dout(snd_do), .snd_rw(snd_rw), .snd_din(snd_di), .snd_irq_n(snd_irq_n),
+    .snd_ce(snd_ce), .snd_a(t65_1_o.a), .snd_dout(snd_do), .snd_rw(snd_rw), .snd_din(snd_di), .snd_irq_n(snd_irq_n),
     .z80_cen_p(z_cen_p), .z80_cen_n(z_cen_n), .z80_reset_n(z_reset_n),
     .z_a(z_a), .z_dout(z_do), .z_mreq_n(z_mreq_n), .z_iorq_n(z_iorq_n), .z_rd_n(z_rd_n), .z_wr_n(z_wr_n), .z_m1_n(z_m1_n),
     .z_din(snd_z_di),
     .victory(vic), .vic_cmd_wr(v_snd_wr), .vic_cmd(z_do), .vic_resp_rd(v_snd_rd), .vic_resp(v_snd_resp),
     .vic_status(v_snd_status),
     .vol_music(vol_music), .vol_sfx(vol_sfx), .vol_speech(vol_speech),
-    .z_rom_q(z_rom_q),          // REUSE-2026-10-26: Victory main ROM 8000-BFFF (was qrom1)
-    // REUSE-2026-10-26: Star Fire's cram_e / cram_o banks in snd_rom / cvsd_rom (no sound 6502 / CVSD on Star Fire)
-    .lend(sf), .lend_aa({2'b00, sf_pr_aa[47:36], 2'b00, sf_pr_aa[35:24]}), .lend_ad(sf_pr_ad[31:16]),
-    .lend_aw(sf_pr_aw[3:2]), .lend_ba({2'b00, sf_pr_ba}), .lend_qa(sf_lend_qa), .lend_qb(sf_lend_qb),
+    .z_rom_q(z_rom_q),          // Victory main ROM 8000-BFFF
+    .pr_i(sb_pr_i), .pr_o(pool_o),
+    .snd_rom_a(sb_snd_rom_a), .snd_rom_q(rom_snd_q), .cvsd_rom_a(sb_cvsd_rom_a), .cvsd_rom_q(rom_cvsd_q),
+    // the board's chips are the pool above
+    .pia6821_i(sb_pia6821_i), .pia6821_o(pia6821_o), .pit8253_i(sb_pit8253_i), .pit8253_o(pit8253_0_o),
+    .riot6532_i(riot6532_0_i), .riot6532_o(riot6532_0_o), .ptm6840_i(ptm6840_0_i), .ptm6840_o(ptm6840_0_o),
+    .mc3417_i(mc3417_0_i), .mc3417_o(mc3417_0_o), .tms5220rsws_i(tms5220rsws_0_i), .tms5220rsws_o(tms5220rsws_0_o),
     .audio(sndbd_audio)
 );
 
@@ -430,12 +585,9 @@ circus_snd circus_s
 );
 
 assign z_di    = sf ? sf_z_di : vic ? v_z_di : snd_z_di;
-// REUSE-2026-10-26: gen-1, Circus-family and Star Fire / Fire One sound is the discrete sound engine's program (every
-// MRA of variants 5-9 / 11 carries index 5, which switches audio to the engine). Their analog RTL models were a second
-// implementation that never played; with no fanout Quartus prunes them (~11k ALM, 6 DSP). Their digital fronts
-// (g1_lat*/tone/mus, sf_lat*/sf_pit) still feed the engine. Original below, uncomment to restore the fallbacks:
-// wire signed [15:0] brd_l = sf ? sf_audio_l : cp ? 16'sd0 : circus ? circus_audio : gen1 ? gen1_audio : sndbd_audio;
-// wire signed [15:0] brd_r = sf ? sf_audio_r : brd_l;
+// gen-1, Circus-family and Star Fire / Fire One sound is the discrete sound engine's program (every MRA of variants 5-9 / 11
+// carries index 5, which switches audio to the engine); the board audio is zero for them. Their digital fronts
+// (g1_lat*/tone/mus, sf_lat*/sf_pit) feed the engine.
 wire signed [15:0] brd_l = (sf | cp | circus | gen1) ? 16'sd0 : sndbd_audio;
 wire signed [15:0] brd_r = brd_l;
 wire unused_fallback = &{1'b0, sf_audio_l, sf_audio_r, circus_audio, gen1_audio};
@@ -479,13 +631,20 @@ always_comb
     else if (circus) ds_board = {24'd0, bx_q[0], c_latch};
     else             ds_board = 40'd0;
 
-dsnd_engine dsnd
+// pool slot dsnd_0 (dsndlr type: gen-1, Circus family, Star Fire / Fire One, Car Polo)
+chip_pool_pkg::dsndlr_i_t dsnd_0_i;
+chip_pool_pkg::dsndlr_o_t dsnd_0_o;
+assign dsnd_0_i.src = {ds_caps, vol_music, vol_sfx, ds_board};
+dsnd_engine dsnd_0
 (
     .clk(clk), .reset(reset), .pause(pause),
     .prog_wr(ds_wr), .prog_addr(ds_addr), .prog_data(ds_data),
-    .src({ds_caps, vol_music, vol_sfx, ds_board}),
-    .out(ds_l), .out_r(ds_r), .sample(ds_sample)
+    .src(dsnd_0_i.src),
+    .out(dsnd_0_o.out), .out_r(dsnd_0_o.out_r), .sample(dsnd_0_o.sample)
 );
+assign ds_l      = dsnd_0_o.out;
+assign ds_r      = dsnd_0_o.out_r;
+assign ds_sample = dsnd_0_o.sample;
 
 /////////////////////////////  Star Fire / Fire One  /////////////////////////////
 
@@ -505,7 +664,7 @@ starfire_main starfire_b
     .pix_x(s_pix_x), .pix_y(s_pix_y), .pix_rgb(s_pix_rgb), .pix_pen(s_pix_pen),
     .pal_ri(fb_q[5:0]), .pal_rq(s_pal_rq), .vbl_raw(s_vblank_raw),
     .hs_a(hs_address), .hs_din(hs_data_in), .hs_dout(s_hs_dout), .hs_we(hs_write && sf),
-    .pr_aa(sf_pr_aa), .pr_ad(sf_pr_ad), .pr_aw(sf_pr_aw), .pr_ba(sf_pr_ba), .pr_qa(sf_pr_qa), .pr_qb(sf_pr_qb)
+    .pr_i(sf_pr_i), .pr_o(pool_o)
 );
 
 starfire_snd starfire_s
@@ -514,7 +673,8 @@ starfire_snd starfire_s
     .snd_wr(sf_snd_wr), .snd_a0(sf_snd_a0), .music_wr(sf_mus_wr), .music_a(sf_mus_a), .din(z_do),
     .tie_on_n(sf_tie_n), .laser_on_n(sf_laser_n), .player_sel(sf_psel),
     .vol_music(vol_music), .vol_sfx(vol_sfx),
-    .audio_l(sf_audio_l), .audio_r(sf_audio_r), .lat0(sf_lat0), .lat1(sf_lat1), .pit_q(sf_pit)
+    .audio_l(sf_audio_l), .audio_r(sf_audio_r), .lat0(sf_lat0), .lat1(sf_lat1), .pit_q(sf_pit),
+    .pit8253_i(sf_pit8253_i), .pit8253_o(pit8253_0_o)          // pool slot pit8253_0
 );
 
 /////////////////////////////  Victory  /////////////////////////////
@@ -532,7 +692,8 @@ victory_main victory_b
     .pix_x(v_pix_x), .pix_y(v_pix_y), .pix_rgb(v_pix_rgb), .pix_pen(v_pix_pen),
     .pal_ri(fb_q[5:0]), .pal_rq(v_pal_rq), .vbl_raw(v_vblank_raw),
     .nv_wr(nv_wr), .nv_addr(ioctl_addr[10:0]), .nv_din(nv_din), .nv_dout(nv_dout),
-    .nv_saved(nv_saved), .nv_dirty(nv_dirty)
+    .nv_saved(nv_saved), .nv_dirty(nv_dirty),
+    .pr_i(vic_pr_i), .pr_o(pool_o)
 );
 
 /////////////////////////////  Car Polo  /////////////////////////////
@@ -545,7 +706,11 @@ carpolo_main carpolo_b
     .spr_a(p_spr_a), .spr_d(spr_d),
     .in0(in0), .dsw(dsw), .in2(in2), .pedals(intsrc), .dial1(dial), .dial2(dial2), .dial3(dial3), .dial4(dial4),
     .pix_x(p_pix_x), .pix_y(p_pix_y), .pix_idx(p_pix_idx), .pix_rgb(p_pix_rgb),
-    .pal_ri(fb_q[4:0]), .pal_rq(p_pal_rq), .vbl_raw(p_vblank_raw), .snd(cp_snd)
+    .pal_ri(fb_q[4:0]), .pal_rq(p_pal_rq), .vbl_raw(p_vblank_raw), .snd(cp_snd),
+    .pia6821_i(cp_pia6821_i), .pia6821_o(pia6821_o),           // pool slots pia6821[0] / [1]
+    .pr_i(cp_pr_i), .pr_o(pool_o),
+    .goal_rom_sa(p_goal_sa), .goal_rom_sq(rom_cp0_qa), .goal_rom_ca(p_goal_ca), .goal_rom_cq(rom_cp0_qb),
+    .alpha_rom_a(p_alpha_a), .alpha_rom_q(rom_cp1_qa)
 );
 
 /////////////////////////////  CRT Flip + video out  /////////////////////////////
@@ -556,9 +721,8 @@ carpolo_main carpolo_b
 logic       wbuf = 1'b0;
 wire        pix_vis = (pix_x < 9'd256) && (pix_y < 9'd256);
 wire [16:0] fb_wa = {wbuf, pix_y[7:0], pix_x[7:0]};
-// Circus family: MAME's 248-px window (H 8-255) mirrors onto itself; Star Fire: lines 32-255; Car Polo: its 240-px
-// window (H 0-239) mirrors onto itself (FLIP-2026-10-26: was 255 - x, a 180 turn shifted 16 px, board sim).
-// Original: wire [16:0] fb_ra = {~wbuf, (sf ? 8'd31 : 8'd255) - pix_y[7:0], (circus ? 8'd7 : 8'd255) - pix_x[7:0]};
+// Circus family: the 248-px window (H 8-255) mirrors onto itself; Star Fire: lines 32-255; Car Polo: its 240-px
+// window (H 0-239) mirrors onto itself.
 wire [16:0] fb_ra = {~wbuf, (sf ? 8'd31 : 8'd255) - pix_y[7:0], (circus ? 8'd7 : cp ? 8'd239 : 8'd255) - pix_x[7:0]};
 
 always_ff @(posedge clk)
@@ -596,7 +760,7 @@ wire [8:0] hs_len = sf ? 9'd24 : 9'd32;
 wire [8:0] vs_beg = (sf ? 9'd11 : 9'd256) + {{5{v_adj[3]}}, v_adj};
 wire [8:0] vs_len = sf ? 9'd4 : 9'd8;
 
-// Circus family: monochrome monitor under a coloured overlay (MAME circus.lay / crash.lay / crasha.lay),
+// Circus family: monochrome monitor under a coloured overlay,
 // board config 2 [5:4] = 1 Circus, 2 Crash, 3 Crash set 2; playfield x = H - 8
 wire  [7:0] px = ox[7:0] - 8'd8;
 logic [23:0] tint;

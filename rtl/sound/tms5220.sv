@@ -5,7 +5,7 @@
 //  Bit-exact against MAME: verilator/tms5220_cosim/.
 //  One ce_sample = one sample (TMS clock / 80): bit-serial frame parse, one shared multiplier for the
 //  20 lattice products; CPU accesses wait for the sequencer so they land between samples.
-//  No VSM: Speak / Read Byte read all ones (as MAME with no VSM attached).
+//  No VSM: Speak / Read Byte read all ones (all ones when no VSM is attached).
 //============================================================================
 
 module tms5220
@@ -14,14 +14,14 @@ module tms5220
     input  wire        reset,
     input  wire        ce_sample,     // one pulse per output sample (TMS clock / 80)
 
-    input  wire        wr,            // CPU write strobe (one clk): MAME data_w()
+    input  wire        wr,            // CPU write strobe (one clk): data write
     input  wire  [7:0] din,
-    input  wire        rd,            // CPU read strobe (one clk): MAME status_r() side effect (clears INT)
+    input  wire        rd,            // CPU read strobe (one clk): status read side effect (clears INT)
     output reg   [7:0] dout,          // status: TS BL BE 00000 (or the read-byte register after a Read Byte)
     output wire        int_n,         // /INT
-    output wire        ready_n,       // /READY (MAME ready_read(), instant mode)
+    output wire        ready_n,       // /READY (instant mode)
 
-    output reg  signed [15:0] audio,  // MAME process() sample (clip_analog: analog SPK pin, 16-bit range)
+    output reg  signed [15:0] audio,  // audio sample (analog SPK pin, clipped to 16-bit range)
     output reg         audio_valid
 );
 
@@ -29,10 +29,10 @@ module tms5220
 
     localparam [7:0] NOCOMMAND = 8'hFF;
 
-    // ---------------- chip state (names follow MAME's m_*) ----------------
+    // ---------------- chip state (names follow the reference implementation) ----------------
     reg  [7:0] fifo [0:15];
     reg  [3:0] fifo_head, fifo_tail;
-    reg  [7:0] fifo_count;            // uint8_t in MAME (wraps)
+    reg  [7:0] fifo_count;            // 8-bit, wraps
     reg  [2:0] fifo_bits_taken;
     reg        SPEN, DDIS, TALK, TALKD, prev_talk, buffer_low, buffer_empty, irq_pin;
     reg  [7:0] command_register;
@@ -49,10 +49,10 @@ module tms5220
     reg  [3:0] PC;
     reg  [2:0] IP;
     reg        inhibit, uv_zpar, zpar, pitch_zero;
-    reg  [8:0] pitch_count;           // &0x1FF in MAME
+    reg  [8:0] pitch_count;           // wraps at 0x1FF
     reg [15:0] RNG;
     reg signed [15:0] exc;
-    reg signed [23:0] u [0:10];       // int32_t in MAME; |values| < 2^20 by construction
+    reg signed [23:0] u [0:10];       // signed; |values| < 2^20 by construction
     reg signed [23:0] x [0:9];
     reg        io_ready, data_latched;
 
@@ -60,7 +60,7 @@ module tms5220
     assign int_n   = ~irq_pin;
     assign ready_n = ~(((fifo_count < 8'd16) | ~DDIS) & io_ready);
 
-    // ---------------- MAME update_fifo_status_and_ints() ----------------
+    // ---------------- update FIFO status and interrupts ----------------
     task automatic update_fifo;
         begin
             if (fifo_count <= 8'd8) begin
@@ -81,7 +81,7 @@ module tms5220
         end
     endtask
 
-    // ---------------- MAME read_bits(1) step, Speak External path ----------------
+    // ---------------- read 1 bit step, Speak External path ----------------
     reg rb_bit;
     task automatic read_bit;
         begin
@@ -111,7 +111,7 @@ module tms5220
         end
     endtask
 
-    task automatic chip_reset;          // MAME device_reset()
+    task automatic chip_reset;          // chip reset
         integer i;
         begin
             for (i = 0; i < 16; i = i + 1) fifo[i] = 8'd0;
@@ -129,7 +129,7 @@ module tms5220
         end
     endtask
 
-    // ---------------- MAME data_write() / process_command() ----------------
+    // ---------------- data write / command processing ----------------
     task automatic data_write(input [7:0] d);
         reg old_bl;
         begin
@@ -206,7 +206,7 @@ module tms5220
         endcase
     endfunction
 
-    // MAME matrix_multiply: a wrapped to 10 bits, b to 15-bit two's complement (-16384..16383), (a*b)>>9
+    // matrix multiply: a wrapped to 10 bits, b to 15-bit two's complement (-16384..16383), (a*b)>>9
     reg  signed [9:0]  mm_a;
     reg  signed [14:0] mm_b;
     wire signed [24:0] mm_p = mm_a * mm_b;
@@ -254,7 +254,7 @@ module tms5220
 
             case (state)
             S_IDLE: begin
-                if (rd_pend && !rd) begin               // MAME status_read(true)
+                if (rd_pend && !rd) begin               // status read
                     rd_pend <= 1'b0;
                     if (RDB_flag) RDB_flag = 1'b0; else irq_pin = 1'b0;
                 end else if (wr_pend && !wr) begin

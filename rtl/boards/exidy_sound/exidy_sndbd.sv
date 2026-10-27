@@ -1,8 +1,8 @@
 // ============================================================================
 // exidy_sndbd.sv — Exidy Venture-type Audio/Color board, sound section
 //   Venture / Pepper II (77-3387 / 77-0007) and Mouse Trap (177-3392, + Z80/MC3417 CVSD)
-//   Victory (victory = 1): MAME victory_sound_device map, F800/F801 command link, TMS5220 on the RIOT.
-// Sources: Claude/exidy_schematic_facts.md (schematic = target), MAME exidysound.cpp (fallback).
+//   Victory (victory = 1): Victory sound map, F800/F801 command link, TMS5220 on the RIOT.
+// Sources: the schematics (schematic = target), MAME exidysound.cpp (fallback).
 //
 // Sound 6502 map (74LS154 on A14-A11, A15 undecoded):
 //   0000-07FF RIOT RAM (A0-A6; Mouse Trap: only with A7=0, A7=1 = unfitted /EXRAM -> open bus)
@@ -14,7 +14,7 @@
 // All clocks are enables from one 22.578 MHz clk: CLK = 3.579545/2 (8253, Z80),
 // E = CLK/2 (6502 Phi0, 6840, 6532, sound-side PIA).
 //
-// Victory map (A15-A12; MAME exidysound.cpp victory_audio_map): 0000-0FFF RIOT RAM (A7=0) / 128 B RAM (A7=1),
+// Victory map (A15-A12): 0000-0FFF RIOT RAM (A7=0) / 128 B RAM (A7=1),
 //   1xxx RIOT I/O, 2xxx PIA, 3xxx 8253 (write only), 5xxx 6840, 6xxx sfx latches, C000-FFFF ROM; rest open bus.
 //   No filter latch. RIOT PA = TMS5220 data, PB0 -> /RS, PB1 -> /WS, PB2 <- /READY, PB3 <- /INT.
 //   PIA: PA <- command latch, CA1 <- command pending (0), CA2 falling -> CA1 = 1; PB -> response,
@@ -22,7 +22,7 @@
 // ============================================================================
 
 module exidy_sndbd #(
-    parameter bit MTRAP_EXRAM_OPEN = 1'b1   // 1 = schematic: Mouse Trap 0080-00FF (A7=1) is open bus; 0 = MAME mirror
+    parameter bit MTRAP_EXRAM_OPEN = 1'b1   // 1 = schematic: Mouse Trap 0080-00FF (A7=1) is open bus; 0 = RAM mirror
 )
 (
     input  logic        clk,            // 22.578 MHz
@@ -30,10 +30,6 @@ module exidy_sndbd #(
     input  logic        pause,          // OSD pause: freezes every clock enable on the board (CPUs stay in lockstep)
     input  logic        cvsd_en,        // 1 = Mouse Trap speech section fitted
     input  logic        victory,        // 1 = Victory map + command latch + TMS5220
-
-    input  logic [24:0] ioctl_addr,
-    input  logic  [7:0] ioctl_dout,
-    input  logic        ioctl_wr0,
 
     input  logic        main_ce,
     input  logic        main_pia_cs,
@@ -67,17 +63,30 @@ module exidy_sndbd #(
     input  logic  [3:0] vol_sfx,
     input  logic  [3:0] vol_speech,
 
-    output logic  [7:0] z_rom_q,        // REUSE-2026-10-26: cvsd_rom read data (also Victory's main ROM 8000-BFFF)
+    output logic  [7:0] z_rom_q,        // cvsd_rom read data (also Victory's main ROM 8000-BFFF)
 
-    // REUSE-2026-10-26: snd_rom (0) / cvsd_rom (1) lent to the board's RAM pool while lend = 1 (Star Fire colour RAMs).
-    // A ROM download always wins port A (the variant byte arrives after index 0, so lend can still be the last game's).
-    input  logic        lend,
-    input  logic [27:0] lend_aa,
-    input  logic [15:0] lend_ad,
-    input  logic  [1:0] lend_aw,
-    input  logic [13:0] lend_ba,
-    output logic [15:0] lend_qa,
-    output logic [15:0] lend_qb,
+    // sound / CVSD ROMs in the dispatcher's shared ROM blocks (read ports)
+    output logic [13:0] snd_rom_a,
+    input  logic  [7:0] snd_rom_q,
+    output logic [13:0] cvsd_rom_a,
+    input  logic  [7:0] cvsd_rom_q,
+    // board RAM pool (rtl/ram_pool_pkg.sv, dispatcher): block 5 = Victory 0080-00FF RAM
+    output ram_pool_pkg::pram_i_t [5:0] pr_i,
+    input  ram_pool_pkg::pram_o_t [5:0] pr_o,
+
+    // this board's chips are the dispatcher's shared pool (rtl/exidy_board.sv), driven here
+    output chip_pool_pkg::pia6821_i_t [1:0] pia6821_i,      // [0] main-side PIA, [1] sound-side PIA
+    input  chip_pool_pkg::pia6821_o_t [1:0] pia6821_o,
+    output chip_pool_pkg::pit8253_i_t       pit8253_i,
+    input  chip_pool_pkg::pit8253_o_t       pit8253_o,
+    output chip_pool_pkg::riot6532_i_t      riot6532_i,
+    input  chip_pool_pkg::riot6532_o_t      riot6532_o,
+    output chip_pool_pkg::ptm6840_i_t       ptm6840_i,
+    input  chip_pool_pkg::ptm6840_o_t       ptm6840_o,
+    output chip_pool_pkg::mc3417_i_t        mc3417_i,
+    input  chip_pool_pkg::mc3417_o_t        mc3417_o,
+    output chip_pool_pkg::tms5220rsws_i_t   tms5220rsws_i,
+    input  chip_pool_pkg::tms5220rsws_o_t   tms5220rsws_o,
 
     output logic signed [15:0] audio
 );
@@ -124,39 +133,16 @@ wire   e_ce      = snd_ce;
 // ============================================================================
 // ROMs (dpram_dc, 1-clk read latency; CPU addresses are stable for many clks)
 // ============================================================================
-wire rom_wr = ioctl_wr0 & (ioctl_addr[24:14] == 11'd3);    // 0x0C000-0x0FFFF = CPU 4000-7FFF
-// REUSE-2026-10-26: the block also holds Victory's main ROM 8000-BFFF (index 0 0x40000-0x43FFF, read by the same pooled
+// Both ROMs are dispatcher ROM blocks (rom_wr / cvr_wr load decode there).
+// The cvsd_rom block also holds Victory's main ROM 8000-BFFF (index 0 0x40000-0x43FFF, read by the same pooled
 // Z80 at z_a[13:0]); Victory has no CVSD section. Fax's question bytes at 0x40000 land here too, unread (Fax reads DDR3).
-// Original: wire cvr_wr = ioctl_wr0 & (ioctl_addr[24:14] == 11'd4);    // 0x10000-0x13FFF = Z80 0000-3FFF
-wire cvr_wr = ioctl_wr0 & ((ioctl_addr[24:14] == 11'd4) | (ioctl_addr[24:14] == 11'h010));
-
 logic [7:0] rom_q, cvr_q;
-// REUSE-2026-10-26: original ports (before the lend path) commented out below
-// dpram_dc #(.widthad_a(14), .width_a(8)) snd_rom
-// (
-//     .clock_a(clk), .address_a(ioctl_addr[13:0]), .data_a(ioctl_dout), .wren_a(rom_wr), .q_a(),
-//     .clock_b(clk), .address_b(snd_a[13:0]), .data_b(8'h00), .wren_b(1'b0), .q_b(rom_q)
-// );
-// dpram_dc #(.widthad_a(14), .width_a(8)) cvsd_rom
-// (
-//     .clock_a(clk), .address_a(ioctl_addr[13:0]), .data_a(ioctl_dout), .wren_a(cvr_wr), .q_a(),
-//     .clock_b(clk), .address_b(z_a[13:0]), .data_b(8'h00), .wren_b(1'b0), .q_b(cvr_q)
-// );
-wire ln0 = lend & ~rom_wr, ln1 = lend & ~cvr_wr;
-dpram_dc #(.widthad_a(14), .width_a(8)) snd_rom
-(
-    .clock_a(clk), .address_a(ln0 ? lend_aa[13:0] : ioctl_addr[13:0]), .data_a(ln0 ? lend_ad[7:0] : ioctl_dout),
-    .wren_a(rom_wr | (ln0 & lend_aw[0])), .q_a(lend_qa[7:0]),
-    .clock_b(clk), .address_b(lend ? lend_ba : snd_a[13:0]), .data_b(8'h00), .wren_b(1'b0), .q_b(rom_q)
-);
-dpram_dc #(.widthad_a(14), .width_a(8)) cvsd_rom
-(
-    .clock_a(clk), .address_a(ln1 ? lend_aa[27:14] : ioctl_addr[13:0]), .data_a(ln1 ? lend_ad[15:8] : ioctl_dout),
-    .wren_a(cvr_wr | (ln1 & lend_aw[1])), .q_a(lend_qa[15:8]),
-    .clock_b(clk), .address_b(lend ? lend_ba : z_a[13:0]), .data_b(8'h00), .wren_b(1'b0), .q_b(cvr_q)
-);
-assign lend_qb = {cvr_q, rom_q};
-assign z_rom_q = cvr_q;
+// (ROM blocks are in the dispatcher)
+assign snd_rom_a  = snd_a[13:0];
+assign rom_q      = snd_rom_q;
+assign cvsd_rom_a = z_a[13:0];
+assign cvr_q      = cvsd_rom_q;
+assign z_rom_q    = cvr_q;
 
 // ============================================================================
 // Sound CPU decode
@@ -176,11 +162,19 @@ wire       s_wr    = e_ce & ~snd_rw;
 
 // Victory 0080-00FF RAM (mirror 0F00)
 logic [7:0] vram_q;
-dpram_dc #(.widthad_a(7), .width_a(8)) vic_ram
-(
-    .clock_a(clk), .address_a(snd_a[6:0]), .data_a(snd_dout), .wren_a(s_wr & s_vram), .q_a(),
-    .clock_b(clk), .address_b(snd_a[6:0]), .data_b(8'h00), .wren_b(1'b0), .q_b(vram_q)
-);
+// pool block 5
+assign pr_i[0] = '0;
+assign pr_i[1] = '0;
+assign pr_i[2] = '0;
+assign pr_i[3] = '0;
+assign pr_i[4] = '0;
+assign pr_i[5].a_addr = {8'd0, snd_a[6:0]};
+assign pr_i[5].a_d    = snd_dout;
+assign pr_i[5].a_we   = s_wr & s_vram;
+assign pr_i[5].b_addr = {8'd0, snd_a[6:0]};
+assign pr_i[5].b_d    = 8'h00;
+assign pr_i[5].b_we   = 1'b0;
+assign vram_q = pr_o[5].b_q;
 
 // ============================================================================
 // RIOT 6532
@@ -191,14 +185,20 @@ logic       busy_ff;          // Mouse Trap E2: /BUSY from the Z80 -> PB0
 logic [7:0] tms_bus;          // Victory: TMS5220 data bus (FF when not driving)
 logic       tms_ready_n, tms_int_n;
 
-riot6532 riot
-(
-    .clk(clk), .rst(reset), .ce(e_ce),
-    .ram_cs(s_ram), .io_cs(s_rio), .rw(snd_rw), .a(snd_a[6:0]), .din(snd_dout), .dout(riot_q),
-    .irq(riot_irq),
-    .pa_i(victory ? tms_bus : 8'hFF), .pa_pins(riot_pa),
-    .pb_i(victory ? {4'hF, tms_int_n, tms_ready_n, 2'b11} : {7'h7F, cvsd_en ? busy_ff : 1'b1}), .pb_pins(riot_pb)
-);
+// pool slot riot6532_0 (dispatcher)
+assign riot6532_i.rst    = reset;
+assign riot6532_i.ce     = e_ce;
+assign riot6532_i.ram_cs = s_ram;
+assign riot6532_i.io_cs  = s_rio;
+assign riot6532_i.rw     = snd_rw;
+assign riot6532_i.a      = snd_a[6:0];
+assign riot6532_i.din    = snd_dout;
+assign riot6532_i.pa_i   = victory ? tms_bus : 8'hFF;
+assign riot6532_i.pb_i   = victory ? {4'hF, tms_int_n, tms_ready_n, 2'b11} : {7'h7F, cvsd_en ? busy_ff : 1'b1};
+assign riot_q   = riot6532_o.dout;
+assign riot_irq = riot6532_o.irq;
+assign riot_pa  = riot6532_o.pa_pins;
+assign riot_pb  = riot6532_o.pb_pins;
 
 // ============================================================================
 // PIAs: main side (5200-520F, main CPU E) and sound side (1000-17FF, sound E)
@@ -218,28 +218,49 @@ wire       n_mcb2  = mp_cb2_oe ? mp_cb2_o : 1'b1;    // -> snd CA1
 wire       n_sca2  = sp_ca2_oe ? sp_ca2_o : 1'b1;    // -> main CB1
 wire       n_scb2  = sp_cb2_oe ? sp_cb2_o : 1'b1;    // -> main CA1
 
-pia6821 main_pia
-(
-    .clk(clk), .rst(reset), .ce(main_ce), .cs(main_pia_cs), .rw(main_rw), .rs(main_a),
-    .din(main_din), .dout(mp_q), .irqa(), .irqb(),
-    .pa_i(net_a), .pa_o(mp_pa_o), .pa_oe(mp_pa_oe), .ca1(n_scb2), .ca2_i(n_mca2), .ca2_o(mp_ca2_o), .ca2_oe(mp_ca2_oe),
-    .pb_i(net_b), .pb_o(mp_pb_o), .pb_oe(mp_pb_oe), .cb1(n_sca2), .cb2_i(n_mcb2), .cb2_o(mp_cb2_o), .cb2_oe(mp_cb2_oe)
-);
+// pool slot pia6821[0] (dispatcher)
+assign pia6821_i[0].rst   = reset;
+assign pia6821_i[0].ce    = main_ce;
+assign pia6821_i[0].cs    = main_pia_cs;
+assign pia6821_i[0].rw    = main_rw;
+assign pia6821_i[0].rs    = main_a;
+assign pia6821_i[0].din   = main_din;
+assign pia6821_i[0].pa_i  = net_a;
+assign pia6821_i[0].ca1   = n_scb2;
+assign pia6821_i[0].ca2_i = n_mca2;
+assign pia6821_i[0].pb_i  = net_b;
+assign pia6821_i[0].cb1   = n_sca2;
+assign pia6821_i[0].cb2_i = n_mcb2;
+assign mp_q      = pia6821_o[0].dout;
+assign mp_pa_o   = pia6821_o[0].pa_o;   assign mp_pa_oe  = pia6821_o[0].pa_oe;
+assign mp_ca2_o  = pia6821_o[0].ca2_o;  assign mp_ca2_oe = pia6821_o[0].ca2_oe;
+assign mp_pb_o   = pia6821_o[0].pb_o;   assign mp_pb_oe  = pia6821_o[0].pb_oe;
+assign mp_cb2_o  = pia6821_o[0].cb2_o;  assign mp_cb2_oe = pia6821_o[0].cb2_oe;
 assign main_dout = mp_q;
 
-// Victory: main-side link (MAME victory_sound_device) replaces the main PIA
+// Victory: main-side link replaces the main PIA
 logic [7:0] vic_latch;
 logic       vic_ca1, vic_cb1, vic_ca2_d, vic_cb2_d;
 
-pia6821 snd_pia
-(
-    .clk(clk), .rst(reset), .ce(e_ce), .cs(s_pia), .rw(snd_rw), .rs(snd_a[1:0]),
-    .din(snd_dout), .dout(sp_q), .irqa(sp_irqa), .irqb(),
-    .pa_i(victory ? vic_latch : net_b), .pa_o(sp_pa_o), .pa_oe(sp_pa_oe),
-    .ca1(victory ? vic_ca1 : n_mcb2), .ca2_i(n_sca2), .ca2_o(sp_ca2_o), .ca2_oe(sp_ca2_oe),
-    .pb_i(victory ? 8'h00 : net_a), .pb_o(sp_pb_o), .pb_oe(sp_pb_oe),
-    .cb1(victory ? vic_cb1 : n_mca2), .cb2_i(n_scb2), .cb2_o(sp_cb2_o), .cb2_oe(sp_cb2_oe)
-);
+// pool slot pia6821[1] (dispatcher)
+assign pia6821_i[1].rst   = reset;
+assign pia6821_i[1].ce    = e_ce;
+assign pia6821_i[1].cs    = s_pia;
+assign pia6821_i[1].rw    = snd_rw;
+assign pia6821_i[1].rs    = snd_a[1:0];
+assign pia6821_i[1].din   = snd_dout;
+assign pia6821_i[1].pa_i  = victory ? vic_latch : net_b;
+assign pia6821_i[1].ca1   = victory ? vic_ca1 : n_mcb2;
+assign pia6821_i[1].ca2_i = n_sca2;
+assign pia6821_i[1].pb_i  = victory ? 8'h00 : net_a;
+assign pia6821_i[1].cb1   = victory ? vic_cb1 : n_mca2;
+assign pia6821_i[1].cb2_i = n_scb2;
+assign sp_q      = pia6821_o[1].dout;
+assign sp_irqa   = pia6821_o[1].irqa;
+assign sp_pa_o   = pia6821_o[1].pa_o;   assign sp_pa_oe  = pia6821_o[1].pa_oe;
+assign sp_ca2_o  = pia6821_o[1].ca2_o;  assign sp_ca2_oe = pia6821_o[1].ca2_oe;
+assign sp_pb_o   = pia6821_o[1].pb_o;   assign sp_pb_oe  = pia6821_o[1].pb_oe;
+assign sp_cb2_o  = pia6821_o[1].cb2_o;  assign sp_cb2_oe = pia6821_o[1].cb2_oe;
 
 // CA2 / CB2 pins as seen by the link logic (undriven = high): CA2 falling = irq_clear_w(0), CB2 falling = main_ack_w
 always_ff @(posedge clk) begin
@@ -263,11 +284,14 @@ assign snd_irq_n = ~(sp_irqa | riot_irq);
 // 8253 (music), filter latch, sfx latches
 // ============================================================================
 logic [2:0] pit_out;
-pit8253 pit
-(
-    .clk(clk), .rst(reset), .wr_en(s_wr & s_pit), .a(snd_a[1:0]), .din(snd_dout),
-    .clk_ce(cen_p), .gate(3'b111), .out(pit_out)
-);
+// pool slot pit8253_0 (dispatcher)
+assign pit8253_i.rst    = reset;
+assign pit8253_i.wr_en  = s_wr & s_pit;
+assign pit8253_i.a      = snd_a[1:0];
+assign pit8253_i.din    = snd_dout;
+assign pit8253_i.clk_ce = cen_p;
+assign pit8253_i.gate   = 3'b111;
+assign pit_out = pit8253_o.out;
 
 logic [7:0] filt;
 logic [1:0] sfxctrl;          // bit0 = noise clock (0 = E, 1 = 6840 O1), bit1 = mute O1
@@ -298,11 +322,16 @@ logic         oldxor, o1_d;
 
 wire noise_tap = lfsr[64];
 
-ptm6840 ptm
-(
-    .clk(clk), .rst(reset), .ce(e_ce), .cs(s_ptm), .rw(snd_rw), .rs(snd_a[2:0]),
-    .din(snd_dout), .dout(ptm_q), .cx({3{noise_tap}}), .o(ptm_o), .irq()
-);
+// pool slot ptm6840_0 (dispatcher)
+assign ptm6840_i.rst = reset;
+assign ptm6840_i.ce  = e_ce;
+assign ptm6840_i.cs  = s_ptm;
+assign ptm6840_i.rw  = snd_rw;
+assign ptm6840_i.rs  = snd_a[2:0];
+assign ptm6840_i.din = snd_dout;
+assign ptm6840_i.cx  = {3{noise_tap}};
+assign ptm_q = ptm6840_o.dout;
+assign ptm_o = ptm6840_o.o;
 
 // noise SR clock: E, or 6840 O1 through the LS04 (shifts on the O1 falling edge)
 wire noise_step = e_ce & (~sfxctrl[0] | (o1_d & ~ptm_o[0]));
@@ -362,7 +391,7 @@ end
 
 // I/O: A7=0 read -> RIOT PA3/PA0/PA2/PA1 on ZD3-ZD0; A6=0 read -> 555 on ZD7;
 //      A5=0 write -> ZD0 to /BUSY FF; A4=0 write -> ZD0 to MC3417 data FF.
-// HW clocks the FFs at the end of the I/O cycle; writes qualified by /WR here (MAME).
+// HW clocks the FFs at the end of the I/O cycle; writes qualified by /WR here.
 logic [7:0] z_io_q;
 always_comb begin
     z_io_q = 8'hFF;
@@ -393,21 +422,26 @@ end
 assign z80_reset_n = riot_pa[4] & ~reset & cvsd_en;
 
 logic signed [23:0] cvsd_int;
-mc3417 cvsd
-(
-    .clk(clk), .rst(reset | ~cvsd_en), .bclk(bclk), .din(cvsd_bit), .integ(cvsd_int)
-);
+// pool slot mc3417_0 (dispatcher)
+assign mc3417_i.rst  = reset | ~cvsd_en;
+assign mc3417_i.bclk = bclk;
+assign mc3417_i.din  = cvsd_bit;
+assign cvsd_int = mc3417_o.integ;
 
 // ============================================================================
 // Victory speech: TMS5220 (640 kHz) on the RIOT
 // ============================================================================
 logic signed [15:0] tms_audio;
-tms5220_rsws #(.CLK_HZ(22578000), .TMS_HZ(640000)) tms
-(
-    .clk(clk), .reset(reset | ~victory), .pause(pause),
-    .rs_n(riot_pb[0]), .ws_n(riot_pb[1]), .d_in(riot_pa), .d_out(tms_bus),
-    .ready_n(tms_ready_n), .int_n(tms_int_n), .audio(tms_audio)
-);
+// pool slot tms5220rsws_0 (dispatcher, same CLK_HZ / TMS_HZ)
+assign tms5220rsws_i.reset = reset | ~victory;
+assign tms5220rsws_i.pause = pause;
+assign tms5220rsws_i.rs_n  = riot_pb[0];
+assign tms5220rsws_i.ws_n  = riot_pb[1];
+assign tms5220rsws_i.d_in  = riot_pa;
+assign tms_bus     = tms5220rsws_o.d_out;
+assign tms_ready_n = tms5220rsws_o.ready_n;
+assign tms_int_n   = tms5220rsws_o.int_n;
+assign tms_audio   = tms5220rsws_o.audio;
 
 // ============================================================================
 // Analog section

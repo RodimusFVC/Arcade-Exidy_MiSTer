@@ -1,17 +1,17 @@
+# pool packages first (master: RodimusCoresMaster_MiSTer, sync.sh)
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/chip_pool_pkg.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/ram_pool_pkg.sv
 set_global_assignment -name SYSTEMVERILOG_FILE Arcade-Exidy.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/exidy_board.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/ram_rom/ddr_rom.sv
-# ART-2026-10-26: MAME artwork v2 (master copies, md5 = Centipede/Universal) + DDRAM arbiter (Universal)
+# artwork (master copies) + DDRAM arbiter
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/ram_rom/ddr_arb.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/art/art_xclk.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/art/artwork.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/art/art_resample.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/art/png_decode.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/art/inflate.sv
-set_global_assignment -name SYSTEMVERILOG_FILE rtl/exidy_dial.sv
-set_global_assignment -name SYSTEMVERILOG_FILE rtl/exidy_paddle.sv
-set_global_assignment -name SYSTEMVERILOG_FILE rtl/exidy_stick.sv
-# CTL-2026-10-25: shared input library (controllers.sv v2)
+# shared input library
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/mister_custom/controllers.sv
 
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/boards/exidy6502/exidy_main.sv
@@ -40,6 +40,4 @@ set_global_assignment -name QIP_FILE rtl/cpu/T80/T80.qip
 set_global_assignment -name VERILOG_FILE rtl/mister_custom/pause.v
 set_global_assignment -name VERILOG_FILE rtl/mister_custom/hiscore.v
 
-# DPRAMSV-2026-10-25: VHDL dpram_dc replaced by the SystemVerilog one (same ports/generics + byteena); original:
-# set_global_assignment -name VHDL_FILE rtl/ram_rom/dpram_dc.vhd
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/ram_rom/dpram_dc.sv

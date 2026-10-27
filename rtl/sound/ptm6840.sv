@@ -12,8 +12,8 @@
 //     b4: 1 = latch write does NOT initialise the counter     b5: single-shot
 //     b6: IRQ enable                       b7: output enable (O pin low when 0)
 // Continuous 16-bit: output toggles every N+1 clocks. Dual 8-bit: output high for
-// the last L+1 clocks of each (M+1)(L+1) period (MAME sh6840 / 6840ptm.cpp).
-// External clocks counted on the falling edge (6840ptm.cpp), sampled each E.
+// the last L+1 clocks of each (M+1)(L+1) period.
+// External clocks counted on the falling edge, sampled each E.
 // Reset (/RES): latches = counters = FFFF, CR1 = 01 (held in reset), outputs low.
 // Gates are tied low on the Exidy board; gate inputs are not modelled.
 // ============================================================================

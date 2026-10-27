@@ -4,13 +4,13 @@
 //  Copyright (C) 2026 Rodimus
 //
 //  Video: score-area / field fill, border, four cars + ball + special char (16x16, 1 bpp, sprite ROM =
-//  the pooled rom_spr, code remap PROM), two 2x-zoomed goals, eight alpha rows; MAME's draw order and
+//  the pooled rom_spr, code remap PROM), two 2x-zoomed goals, eight alpha rows; fixed draw order and
 //  colour-PROM pens. Same 336 x 280 raster at 5.6448 MHz, 240 pixels wide.
-//  Collisions: at vblank a sequential checker repeats MAME screen_vblank() in MAME's order (car-car,
-//  car-ball, car-goal, ball-screen, car-border) with MAME's hit selection (last sprite column with a hit,
+//  Collisions: at vblank a sequential checker runs the checks in a fixed order (car-car,
+//  car-ball, car-goal, ball-screen, car-border) with the original hit selection (last sprite column with a hit,
 //  first row in it) and coordinate formula, then raises the 74148 lines together.
 //  Inputs: 74148 priority encoder, coin / steering 7474s and the pedal 74153 sampled once per frame
-//  (MAME timer_tick). No sound: MAME has none for this board.
+//  (once per frame). No sound on this board.
 //
 //============================================================================
 
@@ -51,7 +51,24 @@ module carpolo_main
     input  logic  [4:0] pal_ri,         // second colour read port (CRT Flip readout)
     output logic [23:0] pal_rq,
     output logic        vbl_raw,
-    output logic [31:0] snd             // sound board inputs (dsnd sources 0-3, tools/dsnd_boards.py "carpolo")
+    output logic [31:0] snd,            // sound board inputs (dsnd sources 0-3, tools/dsnd_boards.py "carpolo")
+
+    // the two PIAs are the dispatcher's pool slots pia6821[0] / [1] (shared with the sound board)
+    output chip_pool_pkg::pia6821_i_t [1:0] pia6821_i,
+    input  chip_pool_pkg::pia6821_o_t [1:0] pia6821_o,
+
+    // goal / alphanumeric ROMs in the dispatcher's shared ROM blocks (read ports; the goal ROM is
+    // read on both ports: A = sprite-goal check, B = playfield goals)
+    output logic  [7:0] goal_rom_sa,
+    input  logic  [7:0] goal_rom_sq,
+    output logic  [7:0] goal_rom_ca,
+    input  logic  [7:0] goal_rom_cq,
+    output logic  [8:0] alpha_rom_a,
+    input  logic  [7:0] alpha_rom_q,
+
+    // board RAM pool (rtl/ram_pool_pkg.sv, dispatcher): 4 work RAM, 5 alpha RAM
+    output ram_pool_pkg::pram_i_t [5:0] pr_i,
+    input  ram_pool_pkg::pram_o_t [5:0] pr_o
 );
 
 /////////////////////////////  Raster  /////////////////////////////
@@ -68,7 +85,7 @@ always_ff @(posedge clk) begin
     end
 end
 assign vbl_raw = vcnt[8];
-wire vbl_tick = ce_pix && hcnt == 9'd0 && vcnt == 9'd256;    // MAME screen_vblank(1)
+wire vbl_tick = ce_pix && hcnt == 9'd0 && vcnt == 9'd256;    // vblank start
 
 /////////////////////////////  Small ROMs / PROMs (ioctl)  /////////////////////////////
 
@@ -82,20 +99,15 @@ end
 
 logic [7:0] goal_sa, goal_ca, goal_sq, goal_cq, ach_q;
 logic [8:0] ach_a;
-dpram_dc #(.widthad_a(8)) goal_rom
-(
-    .clock_a(clk), .address_a(ioctl_wr0 ? ioctl_addr[7:0] : goal_sa), .data_a(ioctl_dout),
-    .wren_a(ioctl_wr0 && ioctl_addr[24:8] == 17'h00158), .q_a(goal_sq),
-    .clock_b(clk), .address_b(goal_ca), .data_b(8'h00), .wren_b(1'b0), .q_b(goal_cq)
-);
-dpram_dc #(.widthad_a(9)) alpha_rom
-(
-    .clock_a(clk), .address_a(ioctl_wr0 ? ioctl_addr[8:0] : ach_a), .data_a(ioctl_dout),
-    .wren_a(ioctl_wr0 && ioctl_addr[24:9] == 16'h00B0), .q_a(ach_q),
-    .clock_b(clk), .address_b(9'd0), .data_b(8'h00), .wren_b(1'b0), .q_b()
-);
+// both ROMs are dispatcher ROM blocks (shared with the Circus-family PROMs)
+assign goal_rom_sa = goal_sa;
+assign goal_sq     = goal_rom_sq;
+assign goal_rom_ca = goal_ca;
+assign goal_cq     = goal_rom_cq;
+assign alpha_rom_a = ach_a;
+assign ach_q       = alpha_rom_q;
 
-// colour PROM -> MAME carpolo_palette() levels (R / G 3 bits, B 2 bits through resistor ladders)
+// colour PROM -> palette levels (R / G 3 bits, B 2 bits through resistor ladders)
 function automatic [7:0] lvl3(input [2:0] v);
     case (v)
         3'd0: lvl3 = 8'h00; 3'd1: lvl3 = 8'h1C; 3'd2: lvl3 = 8'h38; 3'd3: lvl3 = 8'h58;
@@ -116,7 +128,7 @@ assign pal_rq = crgb(cprom[pal_ri]);
 function automatic [3:0] goal_pen(input [7:0] b);
     goal_pen = ~b[3:0];
 endfunction
-// goal row r (0-31) -> PROM row base (MAME goallayout: rows 0-7 at 192, 8-23 at 0, 24-31 at 128; 8 bytes per row)
+// goal row r (0-31) -> PROM row base (rows 0-7 at 192, 8-23 at 0, 24-31 at 128; 8 bytes per row)
 function automatic [7:0] goal_base(input [4:0] r);
     if      (r < 5'd8)  goal_base = 8'd192 + {2'd0, r[2:0], 3'd0};
     else if (r < 5'd24) goal_base = {r - 5'd8, 3'd0};
@@ -138,16 +150,25 @@ wire s_rom   = cpu_a[15:12] == 4'hF;
 
 logic [7:0] ram_q, alpha_q;
 logic [7:0] alpha_sa;
-dpram_dc #(.widthad_a(9)) work_ram
-(
-    .clock_a(clk), .address_a(cpu_a[8:0]), .data_a(cpu_do), .wren_a(wr & s_ram), .q_a(ram_q),
-    .clock_b(clk), .address_b(9'd0), .data_b(8'h00), .wren_b(1'b0), .q_b()
-);
-dpram_dc #(.widthad_a(8)) alpha_ram
-(
-    .clock_a(clk), .address_a(cpu_a[7:0]), .data_a(cpu_do), .wren_a(wr & s_alpha), .q_a(),
-    .clock_b(clk), .address_b(alpha_sa), .data_b(8'h00), .wren_b(1'b0), .q_b(alpha_q)
-);
+// work / alpha RAM = pool blocks 4 / 5
+assign pr_i[0] = '0;
+assign pr_i[1] = '0;
+assign pr_i[2] = '0;
+assign pr_i[3] = '0;
+assign pr_i[4].a_addr = {6'd0, cpu_a[8:0]};
+assign pr_i[4].a_d    = cpu_do;
+assign pr_i[4].a_we   = wr & s_ram;
+assign pr_i[4].b_addr = 15'd0;
+assign pr_i[4].b_d    = 8'h00;
+assign pr_i[4].b_we   = 1'b0;
+assign pr_i[5].a_addr = {7'd0, cpu_a[7:0]};
+assign pr_i[5].a_d    = cpu_do;
+assign pr_i[5].a_we   = wr & s_alpha;
+assign pr_i[5].b_addr = {7'd0, alpha_sa};
+assign pr_i[5].b_d    = 8'h00;
+assign pr_i[5].b_we   = 1'b0;
+assign ram_q   = pr_o[4].a_q;
+assign alpha_q = pr_o[5].b_q;
 
 logic [7:0] sr [0:15];                                  // sprite RAM
 always_ff @(posedge clk) if (wr && s_spr) sr[cpu_a[3:0]] <= cpu_do;
@@ -159,29 +180,47 @@ logic       za, zb;
 logic [3:0] dir_q = 4'd0, mov_q = 4'd0;                 // index 0 = P1 .. 3 = P4
 logic [7:0] p1_pb_o, p1_pb_oe;
 
-pia6821 pia0
-(
-    .clk(clk), .rst(reset), .ce(cpu_ce), .cs(s_pia0), .rw(cpu_rw), .rs(cpu_a[1:0]), .din(cpu_do), .dout(pia0_q),
-    .irqa(), .irqb(),
-    .pa_i(8'h00), .pa_o(p0_pa_o), .pa_oe(p0_pa_oe), .ca1(1'b0), .ca2_i(1'b1), .ca2_o(p0_ca2), .ca2_oe(p0_ca2_oe),
-    .pb_i({2'b00, za, zb, 4'h0}), .pb_o(p0_pb_o), .pb_oe(p0_pb_oe), .cb1(1'b0), .cb2_i(1'b1), .cb2_o(p0_cb2), .cb2_oe(p0_cb2_oe)
-);
-pia6821 pia1
-(
-    .clk(clk), .rst(reset), .ce(cpu_ce), .cs(s_pia1), .rw(cpu_rw), .rs(cpu_a[1:0]), .din(cpu_do), .dout(pia1_q),
-    .irqa(), .irqb(),
-    .pa_i({in2[7:4], dir_q[0], dir_q[1], dir_q[2], dir_q[3]}), .pa_o(), .pa_oe(),
-    .ca1(1'b0), .ca2_i(1'b1), .ca2_o(p1_ca2), .ca2_oe(p1_ca2_oe),
-    .pb_i({mov_q[0], mov_q[1], mov_q[2], mov_q[3], 4'h0}), .pb_o(p1_pb_o), .pb_oe(p1_pb_oe),
-    .cb1(1'b0), .cb2_i(1'b1), .cb2_o(p1_cb2), .cb2_oe(p1_cb2_oe)
-);
+// pool slots pia6821[0] / [1] (dispatcher)
+assign pia6821_i[0].rst   = reset;
+assign pia6821_i[0].ce    = cpu_ce;
+assign pia6821_i[0].cs    = s_pia0;
+assign pia6821_i[0].rw    = cpu_rw;
+assign pia6821_i[0].rs    = cpu_a[1:0];
+assign pia6821_i[0].din   = cpu_do;
+assign pia6821_i[0].pa_i  = 8'h00;
+assign pia6821_i[0].ca1   = 1'b0;
+assign pia6821_i[0].ca2_i = 1'b1;
+assign pia6821_i[0].pb_i  = {2'b00, za, zb, 4'h0};
+assign pia6821_i[0].cb1   = 1'b0;
+assign pia6821_i[0].cb2_i = 1'b1;
+assign pia0_q   = pia6821_o[0].dout;
+assign p0_pa_o  = pia6821_o[0].pa_o;   assign p0_pa_oe  = pia6821_o[0].pa_oe;
+assign p0_ca2   = pia6821_o[0].ca2_o;  assign p0_ca2_oe = pia6821_o[0].ca2_oe;
+assign p0_pb_o  = pia6821_o[0].pb_o;   assign p0_pb_oe  = pia6821_o[0].pb_oe;
+assign p0_cb2   = pia6821_o[0].cb2_o;  assign p0_cb2_oe = pia6821_o[0].cb2_oe;
+assign pia6821_i[1].rst   = reset;
+assign pia6821_i[1].ce    = cpu_ce;
+assign pia6821_i[1].cs    = s_pia1;
+assign pia6821_i[1].rw    = cpu_rw;
+assign pia6821_i[1].rs    = cpu_a[1:0];
+assign pia6821_i[1].din   = cpu_do;
+assign pia6821_i[1].pa_i  = {in2[7:4], dir_q[0], dir_q[1], dir_q[2], dir_q[3]};
+assign pia6821_i[1].ca1   = 1'b0;
+assign pia6821_i[1].ca2_i = 1'b1;
+assign pia6821_i[1].pb_i  = {mov_q[0], mov_q[1], mov_q[2], mov_q[3], 4'h0};
+assign pia6821_i[1].cb1   = 1'b0;
+assign pia6821_i[1].cb2_i = 1'b1;
+assign pia1_q   = pia6821_o[1].dout;
+assign p1_ca2   = pia6821_o[1].ca2_o;  assign p1_ca2_oe = pia6821_o[1].ca2_oe;
+assign p1_pb_o  = pia6821_o[1].pb_o;   assign p1_pb_oe  = pia6821_o[1].pb_oe;
+assign p1_cb2   = pia6821_o[1].cb2_o;  assign p1_cb2_oe = pia6821_o[1].cb2_oe;
 
 // 7474 clears (active low), from PIA outputs (inactive while the pin is an input)
 wire [3:0] coin_clr_n  = {p1_cb2_oe ? p1_cb2 : 1'b1, p1_ca2_oe ? p1_ca2 : 1'b1,
                           p0_cb2_oe ? p0_cb2 : 1'b1, p0_ca2_oe ? p0_ca2 : 1'b1};   // coin 4..1
 wire       steer_clr_n = p0_pa_oe[3] ? p0_pa_o[3] : 1'b1;
 
-/////////////////////////////  Per-frame inputs (MAME timer_tick)  /////////////////////////////
+/////////////////////////////  Per-frame inputs  /////////////////////////////
 
 logic [3:0]  coin_q = 4'd0, coin_last = 4'd0;
 logic [31:0] dial_last = 32'd0;                          // {P4, P3, P2, P1}
@@ -269,11 +308,11 @@ end
 assign cpu_irq_n = ~|lines;
 wire [7:0] cause = {4'd0, enc, 1'b0} | ext;
 
-/////////////////////////////  Collision checker (MAME screen_vblank)  /////////////////////////////
+/////////////////////////////  Collision checker  /////////////////////////////
 
 // jobs: 0-5 car-car pairs, 6-9 car-ball, 10-17 car-goal (car1 L, car1 R, ...), 18 ball-left goal,
 // 19 ball-right goal, 20 ball-border, 21-24 car-border; car-car / car-ball / car-goal / car-border stop at
-// the first hit, the ball checks all run (later causes overwrite earlier ones, as in MAME)
+// the first hit, the ball checks all run (later causes overwrite earlier ones)
 logic [7:0]  sv [0:15];                                  // sprite RAM latched at vblank
 typedef enum logic [2:0] {K_IDLE, K_JOB, K_ROW, K_FETCH, K_GFETCH, K_EVAL, K_NEXT, K_APPLY} kstate_t;
 kstate_t     ks = K_IDLE;
@@ -324,7 +363,7 @@ function automatic [3:0] code_of(input [2:0] s, input [7:0] c, input [7:0] d, in
     endcase
 endfunction
 
-// job geometry (MAME int coordinates: 240 - position)
+// job geometry (integer coordinates: 240 - position)
 wire [7:0] rm_a = remap[{(ja == 3'd4), code_of(ja, sv[12], sv[13], sv[14])}];
 wire [7:0] rm_b = remap[{(jb == 3'd4), code_of(jb, sv[12], sv[13], sv[14])}];
 wire signed [9:0] x1 = 10'sd240 - $signed({2'b00, sv[{ja, 1'b0}]});
@@ -334,7 +373,7 @@ wire signed [9:0] y2 = (jkind == 2'd0) ? 10'sd240 - $signed({2'b00, sv[{jb, 1'b1
 wire in_range = (jkind == 2'd0) ? ((x1 - x2 < 10'sd16) && (x2 - x1 < 10'sd16) && (y1 - y2 < 10'sd16) && (y2 - y1 < 10'sd16)) :
                 (jkind == 2'd1) ? ((y1 + 10'sd16 > 10'sd112) && (y1 < 10'sd176) && (x1 + 10'sd16 > x2) && (x1 < x2 + 10'sd16)) :
                 1'b1;
-// normalized bitmap offsets (MAME normalize_coordinates)
+// normalized bitmap offsets (normalized)
 wire signed [9:0] nx1 = (x1 > x2) ? x1 - x2 : 10'sd0;
 wire signed [9:0] nx2 = (x2 > x1) ? x2 - x1 : 10'sd0;
 wire signed [9:0] ny1 = (y1 > y2) ? y1 - y2 : 10'sd0;
@@ -350,7 +389,7 @@ logic [31:0]       ev_tt;
 logic signed [9:0] c2x [0:15];                           // column k of sprite 1 in sprite 2 / goal bitmap x
 logic [2:0]        gcol [0:15];
 logic [7:0]        bxx [0:15];
-wire  [7:0]        byy = y1[7:0] + {3'd0, row};          // border check: MAME uint8 coordinates
+wire  [7:0]        byy = y1[7:0] + {3'd0, row};          // border check: 8-bit coordinates
 always_comb begin
     for (int k = 0; k < 16; k++) begin
         c2x[k]  = nx1 + 10'(k) - nx2;
@@ -386,7 +425,7 @@ always_comb begin
     for (int k = 0; k < 16; k++) if (ev_h[k]) begin ev_k = 6'(k); ev_t = ev_tt[k*2 +: 2]; end
 end
 
-wire [9:0] cb_x = 10'(nx1 + nx1) + 10'(bk);              // MAME col_x = (x1 + x) & 15
+wire [9:0] cb_x = 10'(nx1 + nx1) + 10'(bk);              // col_x = (x1 + x) & 15
 wire [9:0] cb_y = 10'(ny1 + ny1) + {5'd0, bj};
 
 always_ff @(posedge clk) begin
@@ -504,7 +543,7 @@ always_ff @(posedge clk) begin
                 ks  <= K_JOB;
             end
 
-            K_APPLY: begin                               // raise all lines at once, in MAME's write order
+            K_APPLY: begin                               // raise all lines at once, in the original write order
                 ln0 <= 1'b1; ext <= 8'h00;               // timer
                 if (r_cc) begin ln2 <= 1'b1; c_car_car <= r_cc_v; end
                 if (r_cb) begin ln0 <= 1'b1; ext <= 8'h40; c_car_ball <= r_cb_v; c_car_ball_x <= r_cbx; c_car_ball_y <= r_cby; end
@@ -586,7 +625,7 @@ always_ff @(posedge clk) begin
 end
 assign spr_a = k_busy ? k_spr_a : l_spr_a;
 
-// alpha: 8 text lines shown at character rows 0, 1, 26, 27, 12, 13, 6, 7 (MAME draw_alpha_line)
+// alpha: 8 text lines shown at character rows 0, 1, 26, 27, 12, 13, 6, 7
 function automatic [3:0] alpha_line(input [4:0] r);      // {valid, line}
     case (r)
         5'd0:  alpha_line = 4'b1000; 5'd1:  alpha_line = 4'b1001;
@@ -619,7 +658,7 @@ always_ff @(posedge clk) begin
     endcase
 end
 
-// pixel: MAME draw order, later layers win
+// pixel: draw order: later layers win
 wire [7:0] px = hcnt[7:0], py = vcnt[7:0];
 logic [5:0] sp;                                          // sprite hits: 0-3 cars 1-4, 4 ball, 5 special
 always_comb for (int s = 0; s < 6; s++) sp[s] = ((8'(px - sxp[s])) < 8'd16) && srow[s][4'd15 - 4'(px - sxp[s])];

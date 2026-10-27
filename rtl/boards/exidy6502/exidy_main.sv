@@ -3,7 +3,7 @@
 //  Exidy 6502 "Universal Game Board" logic PCB (Venture / Mouse Trap / Pepper II generation)
 //  Copyright (C) 2026 Rodimus
 //
-//  From the schematics (Claude/exidy_schematic_facts.md), MAME exidy.cpp for the memory maps:
+//  From the schematics, with MAME exidy.cpp for the memory maps:
 //    11.289 MHz / 2 = pixel, / 16 = 6502. 336 x 280 raster, 256 x 256 visible, 59.99 Hz.
 //    Screen RAM 32 x 32 codes, RAM-defined 8 x 8 characters (1bpp, or 2bpp on Pepper II's plane board).
 //    Two 16 x 16 motion objects: 74LS193 position counters loaded by the CPU, counting visible pixels / lines;
@@ -25,7 +25,7 @@
 //    [3] Rallys bootleg object registers: 5000 / 5001 MO1 H / V, 5300 / 5301 MO2 H / V
 //    [4] 5103 coin bits active low (Rallys bootlegs)
 //    [5] character generator is ROM (Side Trak): CPU writes ignored, contents preloaded from ioctl 0x15000
-//  Colour latches start from col_init (gen-1 boards set colours with DIP shunts, MAME init_*)
+//  Colour latches start from col_init (gen-1 boards set colours with DIP shunts)
 //
 //  Pixel timing: clk = 4 x pixel. ph 0 = addresses out, ph 1 = screen code / MO1 image, ph 2 = character
 //  pattern / MO2 image, ph 3 = mix; the colour index is registered at ce_pix, one pixel behind (pix_x, pix_y).
@@ -84,13 +84,18 @@ module exidy_main
     input  logic  [9:0] hs_a,
     input  logic  [7:0] hs_din,
     output logic  [7:0] hs_dout,
-    input  logic        hs_we
+    input  logic        hs_we,
+
+    // board RAM pool (rtl/ram_pool_pkg.sv, dispatcher): 2 char plane 0, 3 char plane 1, 4 work, 5 screen
+    output ram_pool_pkg::pram_i_t [5:0] pr_i,
+    input  ram_pool_pkg::pram_o_t [5:0] pr_o,
+    output logic        cram_load       // index-0 preload of char RAM 0 (Side Trak): wins pool block 2 whatever the variant
 );
 
 localparam [8:0] H_TOTAL = 9'd336;
 localparam [8:0] V_TOTAL = 9'd280;
 localparam [8:0] H_VCNT  = 9'h13C;      // VCNTC = NAND(HSYNC, E8, E16, 6phi0): the line changes inside HSYNC
-localparam [7:0] MO_HOFS = 8'd8;        // MAME sx = 232 - P; the counter window alone gives 240 - P #unverified
+localparam [7:0] MO_HOFS = 8'd8;        // object x = 232 - P; the counter window alone gives 240 - P #unverified
 
 wire pepper = cfg[5];
 wire fax    = cfg[6];
@@ -111,7 +116,7 @@ wire h_vis = (hcnt < 9'd256);
 wire v_vis = (vcnt < 9'd256);
 wire vis   = h_vis & v_vis;
 
-/////////////////////////////  CPU decode (MAME maps)  /////////////////////////////
+/////////////////////////////  CPU decode (memory map)  /////////////////////////////
 
 wire sel_ram   = fax ? (cpu_a[15:11] == 5'b00000)                      // 0000-07FF
                      : (cpu_a[15:10] == 6'b000000);                    // 0000-03FF
@@ -138,34 +143,49 @@ logic [7:0] ram_q, vram_q_cpu, vram_q, cram_q_cpu, cram_q, cram1_q;
 logic [9:0] vram_va;
 logic [10:0] cram_va;
 
-dpram_dc #(.widthad_a(11)) work_ram
-(
-    .clock_a(clk), .address_a(cpu_a[10:0]), .data_a(cpu_do), .wren_a(wr & sel_ram), .q_a(ram_q),
-    .clock_b(clk), .address_b({1'b0, hs_a}), .data_b(hs_din), .wren_b(hs_we), .q_b(hs_dout)
-);
-
-dpram_dc #(.widthad_a(10)) screen_ram
-(
-    .clock_a(clk), .address_a(cpu_a[9:0]), .data_a(cpu_do), .wren_a(wr & sel_vram), .q_a(vram_q_cpu),
-    .clock_b(clk), .address_b(vram_va), .data_b(8'd0), .wren_b(1'b0), .q_b(vram_q)
-);
+// The four RAMs are pool blocks 4 (work), 5 (screen), 2 / 3 (char planes).
+// Character RAM: 2K plane 0 (1bpp boards: the whole 4800-4FFF); Pepper II plane 1 at 6800-6FFF. Plane 0 is preloaded from
+// index 0 0x15000-0x157FF (the CPU is in reset).
 
 // character RAM: 2K plane 0 (1bpp boards: the whole 4800-4FFF); Pepper II plane 1 at 6800-6FFF
 wire cram_cpu_p1 = pepper & cpu_a[11];
-wire cram_load   = ioctl_wr0 && ioctl_addr[24:11] == 14'h2A;  // index 0 0x15000-0x157FF (CPU is in reset)
-dpram_dc #(.widthad_a(11)) char_ram0
-(
-    .clock_a(clk), .address_a(cram_load ? ioctl_addr[10:0] : cpu_a[10:0]), .data_a(cram_load ? ioctl_dout : cpu_do),
-    .wren_a(cram_load | (wr & sel_cram & ~cram_cpu_p1 & ~cfg2[5])), .q_a(cram_q_cpu),
-    .clock_b(clk), .address_b(cram_va), .data_b(8'd0), .wren_b(1'b0), .q_b(cram_q)
-);
-
+assign cram_load = ioctl_wr0 && ioctl_addr[24:11] == 14'h2A;  // index 0 0x15000-0x157FF (CPU is in reset)
 logic [7:0] cram1_q_cpu;
-dpram_dc #(.widthad_a(11)) char_ram1
-(
-    .clock_a(clk), .address_a(cpu_a[10:0]), .data_a(cpu_do), .wren_a(wr & sel_cram & cram_cpu_p1), .q_a(cram1_q_cpu),
-    .clock_b(clk), .address_b(cram_va), .data_b(8'd0), .wren_b(1'b0), .q_b(cram1_q)
-);
+
+assign pr_i[0] = '0;
+assign pr_i[1] = '0;
+// block 2: char RAM plane 0 (A = CPU / index-0 preload, B = video)
+assign pr_i[2].a_addr = {4'd0, cram_load ? ioctl_addr[10:0] : cpu_a[10:0]};
+assign pr_i[2].a_d    = cram_load ? ioctl_dout : cpu_do;
+assign pr_i[2].a_we   = cram_load | (wr & sel_cram & ~cram_cpu_p1 & ~cfg2[5]);
+assign pr_i[2].b_addr = {4'd0, cram_va};
+assign pr_i[2].b_d    = 8'd0;
+assign pr_i[2].b_we   = 1'b0;
+// block 3: char RAM plane 1 (Pepper II)
+assign pr_i[3].a_addr = {4'd0, cpu_a[10:0]};
+assign pr_i[3].a_d    = cpu_do;
+assign pr_i[3].a_we   = wr & sel_cram & cram_cpu_p1;
+assign pr_i[3].b_addr = {4'd0, cram_va};
+assign pr_i[3].b_d    = 8'd0;
+assign pr_i[3].b_we   = 1'b0;
+// block 4: work RAM (A = CPU, B = hiscore)
+assign pr_i[4].a_addr = {4'd0, cpu_a[10:0]};
+assign pr_i[4].a_d    = cpu_do;
+assign pr_i[4].a_we   = wr & sel_ram;
+assign pr_i[4].b_addr = {5'd0, hs_a};
+assign pr_i[4].b_d    = hs_din;
+assign pr_i[4].b_we   = hs_we;
+// block 5: screen RAM (A = CPU, B = video)
+assign pr_i[5].a_addr = {5'd0, cpu_a[9:0]};
+assign pr_i[5].a_d    = cpu_do;
+assign pr_i[5].a_we   = wr & sel_vram;
+assign pr_i[5].b_addr = {5'd0, vram_va};
+assign pr_i[5].b_d    = 8'd0;
+assign pr_i[5].b_we   = 1'b0;
+assign {cram_q_cpu, cram_q}   = {pr_o[2].a_q, pr_o[2].b_q};
+assign {cram1_q_cpu, cram1_q} = {pr_o[3].a_q, pr_o[3].b_q};
+assign {ram_q, hs_dout}       = {pr_o[4].a_q, pr_o[4].b_q};
+assign {vram_q_cpu, vram_q}   = {pr_o[5].a_q, pr_o[5].b_q};
 
 /////////////////////////////  Latches  /////////////////////////////
 
@@ -275,9 +295,7 @@ wire c_m2ch = vis_q & m2_on & ch_on;
 wire c_m1m2 = vis_q & m1_on & m2_on;
 wire coll   = (cfg[0] & c_m1ch) | (cfg[1] & c_m2ch) | (cfg[2] & c_m1m2);
 wire vl1    = ce_pix && (hcnt == H_VCNT) && (vcnt == 9'd255);
-// DIAG-REVERT-2026-10-16: original below, uncomment to restore
-// wire coint  = coin1 | coin2;
-logic coin_d = 1'b0;  // DIAG: a coin raises one IRQ event on its leading edge instead of holding the flip-flop preset
+logic coin_d = 1'b0;  // a coin raises one IRQ event on its leading edge instead of holding the flip-flop preset
 always_ff @(posedge clk) coin_d <= coin1 | coin2;
 wire coint  = 1'b0;
 wire coin_ev = (coin1 | coin2) & ~coin_d;
@@ -290,10 +308,10 @@ always_ff @(posedge clk) begin
     if (reset) irq_q <= 1'b0;
     else if (coint) irq_q <= 1'b1;
     else if (eir) irq_q <= 1'b0;
-    else if (vl1 || coin_ev || (ce_pix && coll)) irq_q <= 1'b1;   // DIAG-REVERT-2026-10-16: was (vl1 || (ce_pix && coll))
+    else if (vl1 || coin_ev || (ce_pix && coll)) irq_q <= 1'b1;
 
     // 8E latches on the flip-flop's rising edge
-    if (!irq_q && (coint || (!eir && (vl1 || coin_ev || (ce_pix && coll)))))   // DIAG-REVERT-2026-10-16: was (vl1 || (ce_pix && coll))
+    if (!irq_q && (coint || (!eir && (vl1 || coin_ev || (ce_pix && coll)))))
         cond <= {~in_vbl, coin1 ^ cfg2[4], coin2 ^ cfg2[4],
                  cfg[4] ? c_m1m2 : 1'b1,
                  intsrc[3],

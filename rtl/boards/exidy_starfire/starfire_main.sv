@@ -3,7 +3,7 @@
 //  Exidy Star Fire / Fire One logic board
 //  Copyright (C) 2026 Rodimus
 //
-//  From MAME starfire.cpp / starfire_v.cpp (schematic facts: Claude/exidy_schematic_facts.md, Star Fire section):
+//  From MAME starfire.cpp / starfire_v.cpp and the schematics:
 //    20 MHz master: Z80 = / 8 (2.5 MHz), pixel = / 4 (5 MHz). Here both come from the 22.578 MHz system clock
 //    through a fractional enable (exact average, pixels 4 or 5 clocks long).
 //    Bitmap: 32 columns x 256 lines of 8-pixel bytes (video RAM offset = column * 256 + line), a colour RAM of the
@@ -73,18 +73,14 @@ module starfire_main
     output logic  [7:0] hs_dout,
     input  logic        hs_we,
 
-    // REUSE-2026-10-26: video / colour banks in the board's RAM pool; bank n = bits [n*12 +: 12] / [n*8 +: 8],
-    // 0 vram_e, 1 vram_o, 2 cram_e, 3 cram_o. Port A = CPU / hiscore, port B = scan (shared address)
-    output logic [47:0] pr_aa,
-    output logic [31:0] pr_ad,
-    output logic  [3:0] pr_aw,
-    output logic [11:0] pr_ba,
-    input  logic [31:0] pr_qa,
-    input  logic [31:0] pr_qb
+    // board RAM pool (rtl/ram_pool_pkg.sv, dispatcher): blocks 0-3 = vram_e, vram_o, cram_e,
+    // cram_o (4K each). Port A = CPU / hiscore, port B = scan.
+    output ram_pool_pkg::pram_i_t [5:0] pr_i,
+    input  ram_pool_pkg::pram_o_t [5:0] pr_o
 );
 
-localparam [8:0] H_TOTAL = 9'd320;      // schematic: 256 + 64 (HR) = 0x140 (MAME 0x13F)
-localparam [8:0] V_TOTAL = 9'd262;      // MAME; the schematic carry logic derives 260 #unverified
+localparam [8:0] H_TOTAL = 9'd320;      // schematic: 256 + 64 (HR) = 0x140
+localparam [8:0] V_TOTAL = 9'd262;      // 262 lines; the schematic carry logic derives 260 #unverified
 localparam [8:0] V_START = 9'd32;       // visible lines 32-255
 
 /////////////////////////////  Clock enables  /////////////////////////////
@@ -126,7 +122,7 @@ always_ff @(posedge clk) begin
 end
 wire vis = (hcnt < 9'd256) && (vcnt >= V_START) && (vcnt < 9'd256);
 
-// NMI once per frame at the start of vblank (MAME vblank_int; Star Fire's J6 jumper fitted)
+// NMI once per frame at the start of vblank (Star Fire's J6 jumper fitted)
 logic [5:0] nmi_cnt = 6'd0;
 always_ff @(posedge clk) begin
     if (ce_pix && hcnt == 9'd0 && vcnt == 9'd256 && !pause) nmi_cnt <= 6'd63;
@@ -187,27 +183,34 @@ logic       hs_odd = 1'b0;
 always_ff @(posedge clk) hs_odd <= hs_col[0];
 assign hs_dout = hs_odd ? vo_q : ve_q;
 
-// REUSE-2026-10-26: the four banks live in the board's RAM pool (rtl/exidy_board.sv: Victory's plane blocks hold
-// vram_e / vram_o, the sound board's ROM blocks hold cram_e / cram_o; none of them runs with Star Fire). Same ports,
-// same timing. Original instances below, uncomment (and drop the pr_* assigns) to restore:
-// dpram_dc #(.widthad_a(12)) vram_e (.clock_a(clk), .address_a(hs_on ? hs_ra : ve_a), .data_a(hs_on ? hs_din : ve_d),
-//                                    .wren_a(hs_on ? hs_wr & ~hs_col[0] : ve_w), .q_a(ve_q),
-//                                    .clock_b(clk), .address_b(scan_a), .data_b(8'd0), .wren_b(1'b0), .q_b(ve_s));
-// dpram_dc #(.widthad_a(12)) vram_o (.clock_a(clk), .address_a(hs_on ? hs_ra : vo_a), .data_a(hs_on ? hs_din : vo_d),
-//                                    .wren_a(hs_on ? hs_wr & hs_col[0] : vo_w), .q_a(vo_q),
-//                                    .clock_b(clk), .address_b(scan_a), .data_b(8'd0), .wren_b(1'b0), .q_b(vo_s));
-// dpram_dc #(.widthad_a(12)) cram_e (.clock_a(clk), .address_a(ce_a), .data_a(ce_d), .wren_a(ce_w), .q_a(ce_q),
-//                                    .clock_b(clk), .address_b(scan_a), .data_b(8'd0), .wren_b(1'b0), .q_b(ce_s));
-// dpram_dc #(.widthad_a(12)) cram_o (.clock_a(clk), .address_a(co_a), .data_a(co_d), .wren_a(co_w), .q_a(co_q),
-//                                    .clock_b(clk), .address_b(scan_a), .data_b(8'd0), .wren_b(1'b0), .q_b(co_s));
-assign pr_aa = {co_a, ce_a, hs_on ? hs_ra : vo_a, hs_on ? hs_ra : ve_a};
-assign pr_ad = {co_d, ce_d, hs_on ? hs_din : vo_d, hs_on ? hs_din : ve_d};
-assign pr_aw = {co_w, ce_w, hs_on ? hs_wr & hs_col[0] : vo_w, hs_on ? hs_wr & ~hs_col[0] : ve_w};
-assign pr_ba = scan_a;
-assign {co_q, ce_q, vo_q, ve_q} = pr_qa;
-assign {co_s, ce_s, vo_s, ve_s} = pr_qb;
+// The four banks (vram_e, vram_o, cram_e, cram_o) are blocks 0-3 of the board's RAM pool (rtl/exidy_board.sv); same
+// ports and timing as separate BRAMs.
+assign pr_i[0].a_addr = {3'd0, hs_on ? hs_ra : ve_a};
+assign pr_i[0].a_d    = hs_on ? hs_din : ve_d;
+assign pr_i[0].a_we   = hs_on ? hs_wr & ~hs_col[0] : ve_w;
+assign pr_i[1].a_addr = {3'd0, hs_on ? hs_ra : vo_a};
+assign pr_i[1].a_d    = hs_on ? hs_din : vo_d;
+assign pr_i[1].a_we   = hs_on ? hs_wr & hs_col[0] : vo_w;
+assign pr_i[2].a_addr = {3'd0, ce_a};
+assign pr_i[2].a_d    = ce_d;
+assign pr_i[2].a_we   = ce_w;
+assign pr_i[3].a_addr = {3'd0, co_a};
+assign pr_i[3].a_d    = co_d;
+assign pr_i[3].a_we   = co_w;
+genvar sb;
+generate
+    for (sb = 0; sb < 4; sb++) begin : g_scan
+        assign pr_i[sb].b_addr = {3'd0, scan_a};
+        assign pr_i[sb].b_d    = 8'd0;
+        assign pr_i[sb].b_we   = 1'b0;
+    end
+endgenerate
+assign pr_i[4] = '0;
+assign pr_i[5] = '0;
+assign {ve_q, vo_q, ce_q, co_q} = {pr_o[0].a_q, pr_o[1].a_q, pr_o[2].a_q, pr_o[3].a_q};
+assign {ve_s, vo_s, ce_s, co_s} = {pr_o[0].b_q, pr_o[1].b_q, pr_o[2].b_q, pr_o[3].b_q};
 
-/////////////////////////////  Shifter / mask (MAME videoram_w / videoram_r)  /////////////////////////////
+/////////////////////////////  Shifter / mask (video RAM write / read)  /////////////////////////////
 
 wire        sel2 = z_a[13];                                  // E000-FFFF uses shift / mirror set 2
 wire  [2:0] sh   = sel2 ? vidctrl[3:1] : vidctrl[7:5];
@@ -251,7 +254,7 @@ wire  [7:0] rd_m  = (d1 & mask[15:8]) | (d2 & mask[7:0]);
 wire [15:0] rd_r2 = {rd_m, rd_m} << sh;
 wire  [7:0] rd_rot = rd_r2[15:8];
 
-/////////////////////////////  Colour RAM pseudo-palette (MAME colorram_w / colorram_r)  /////////////////////////////
+/////////////////////////////  Colour RAM pseudo-palette (colour RAM write / read)  /////////////////////////////
 
 wire [4:0] cl_w = cdrm ? color : z_do[4:0];
 wire [4:0] cr_w = {cdrm ? color[4] : z_do[4], z_a[8], z_do[7:5]};

@@ -7,7 +7,7 @@
 //                   at /1 with the flag set.
 //  - timer read   : A2=1 A0=0, A3 = new timer IRQ enable; clears the timer flag
 //                   (not if it was set this very cycle) and, if spinning,
-//                   restarts the prescaler from the current value (MAME).
+//                   restarts the prescaler from the current value.
 //  - flag read    : A2=1 A0=1 -> {timer, PA7 edge, 6'b0}; clears the edge flag.
 //  - edge control : write A2=1 A4=0: A0 = positive edge, A1 = edge IRQ enable.
 // RAM is a dpram_dc (1-clk read latency; the address is stable long before ce).
@@ -106,7 +106,7 @@ always_ff @(posedge clk) begin
                 irq_timer <= 1'b0;
                 if (spinning) begin
                     spinning <= 1'b0;
-                    pcnt     <= 10'd0;          // MAME timer_start(current value)
+                    pcnt     <= 10'd0;          // restart the timer from the current value
                     tval     <= tval;           // (current value re-armed)
                 end
             end

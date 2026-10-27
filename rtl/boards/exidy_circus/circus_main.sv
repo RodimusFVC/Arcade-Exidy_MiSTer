@@ -3,7 +3,7 @@
 //  Exidy "Universal Game Board V1" logic PCB (Circus / Robot Bowl / Trapeze / Rip Cord / Crash)
 //  Copyright (C) 2026 Rodimus
 //
-//  From the schematics (Claude/exidy_schematic_facts.md, Circus + Crash sections), MAME circus.cpp for the maps:
+//  From the schematics, with MAME circus.cpp for the maps:
 //    Same 11.289 MHz timing chain as the 6502 raster boards: 336 x 280, pixel = / 2, 6502 = / 16.
 //    32 x 32 screen RAM, character PROMs (code x 8 + row), 74166 loaded at the end of each cell, so the playfield
 //    lags the H count by 8 px (31 columns visible). Line PROMs 4D / 5D: one 4-bit entry per 8 x 8 cell drawing
@@ -13,11 +13,11 @@
 //    IRQ: J-K flip-flop set by object x playfield overlap (Crash also at vblank start), cleared by any D000 access.
 //
 //  cfg (MRA index 1 byte 3):
-//    [0] line PROMs fitted                 [1] C000 bit 7 = vblank active high (MAME robotbwl / crash), else /vblank
+//    [0] line PROMs fitted                 [1] C000 bit 7 = vblank active high (Robot Bowl / Crash), else /vblank
 //    [2] IRQ at vblank start (Crash)        [3] collision raises IRQ
 //    [4] object image data inverted (Robot Bowl ROMREGION_INVERT)
 //    [5] 32-byte object PROM: image bits not wired (Robot Bowl)
-//    [6] Rip Cord border (line PROMs not dumped: top line + side walls from MAME's draw_border) #unverified
+//    [6] Rip Cord border (line PROMs not dumped: top line + side walls drawn as a border) #unverified
 //
 //  ioctl index 0: character PROMs 0x15800-0x15FFF, line PROMs 0x16000-0x163FF (4D, then 5D)
 //
@@ -30,10 +30,6 @@ module circus_main
     input  logic  [1:0] ph,             // phase within the pixel, ce_pix ends phase 3
     input  logic        ce_pix,
     input  logic  [7:0] cfg,
-
-    input  logic [24:0] ioctl_addr,
-    input  logic  [7:0] ioctl_dout,
-    input  logic        ioctl_wr0,
 
     // main 6502 (owned by exidy_board)
     input  logic        cpu_ce,
@@ -62,7 +58,17 @@ module circus_main
     input  logic  [9:0] hs_a,           // hiscore: work RAM
     input  logic  [7:0] hs_din,
     output logic  [7:0] hs_dout,
-    input  logic        hs_we
+    input  logic        hs_we,
+
+    // character / line PROMs in the dispatcher's shared ROM blocks (read ports)
+    output logic [10:0] chr_rom_a,
+    input  logic  [7:0] chr_rom_q,
+    output logic  [9:0] lp_rom_a,
+    input  logic  [7:0] lp_rom_q,
+
+    // board RAM pool (rtl/ram_pool_pkg.sv, dispatcher): block 5 = screen RAM
+    output ram_pool_pkg::pram_i_t [5:0] pr_i,
+    input  ram_pool_pkg::pram_o_t [5:0] pr_o
 );
 
 localparam [8:0] H_TOTAL = 9'd336;
@@ -99,7 +105,7 @@ wire wr = cpu_ce & ~cpu_rw;
 
 /////////////////////////////  RAMs and PROMs  /////////////////////////////
 
-// work RAM: MAME's 512 B with its power-on pattern (Trapeze locks up when 0E / 0F are both 0). The Circus / Crash
+// work RAM: 512 B with its power-on pattern (Trapeze locks up when 0E / 0F are both 0). The Circus / Crash
 // drawings fit 256 B (2x 2111, stack page = zero page) #unverified
 logic [8:0] init_a = 9'd0;
 logic       init_run = 1'b1;
@@ -111,7 +117,7 @@ always_ff @(posedge clk) begin
 end
 
 logic [7:0] ram_q, vram_q_cpu, vram_q, chr_q, lp_q;
-dpram_dc #(.widthad_a(9)) work_ram
+dpram_dc #(.widthad_a(9)) work_ram  // POOL-EXCEPTION: power-on fill runs before the variant byte is known (a pool block would fill every board's RAM)
 (
     .clock_a(clk), .address_a(init_run ? init_a : cpu_a[8:0]), .data_a(init_run ? {init_a[0], init_a[0], init_a[0], init_a[0], 4'h0} : cpu_do),
     .wren_a(init_run | (wr & sel_ram)), .q_a(ram_q),
@@ -119,33 +125,33 @@ dpram_dc #(.widthad_a(9)) work_ram
 );
 
 logic [9:0] vram_va;
-dpram_dc #(.widthad_a(10)) screen_ram
-(
-    .clock_a(clk), .address_a(cpu_a[9:0]), .data_a(cpu_do), .wren_a(wr & sel_vram), .q_a(vram_q_cpu),
-    .clock_b(clk), .address_b(vram_va), .data_b(8'd0), .wren_b(1'b0), .q_b(vram_q)
-);
+// screen RAM = pool block 5
+assign pr_i[0] = '0;
+assign pr_i[1] = '0;
+assign pr_i[2] = '0;
+assign pr_i[3] = '0;
+assign pr_i[4] = '0;
+assign pr_i[5].a_addr = {5'd0, cpu_a[9:0]};
+assign pr_i[5].a_d    = cpu_do;
+assign pr_i[5].a_we   = wr & sel_vram;
+assign pr_i[5].b_addr = {5'd0, vram_va};
+assign pr_i[5].b_d    = 8'd0;
+assign pr_i[5].b_we   = 1'b0;
+assign {vram_q_cpu, vram_q} = {pr_o[5].a_q, pr_o[5].b_q};
 
 logic [10:0] chr_a;
-wire load_chr = ioctl_wr0 && ioctl_addr[24:11] == 14'h2B;  // 0x15800-0x15FFF
-dpram_dc #(.widthad_a(11)) char_prom
-(
-    .clock_a(clk), .address_a(ioctl_addr[10:0]), .data_a(ioctl_dout), .wren_a(load_chr),
-    .clock_b(clk), .address_b(chr_a), .q_b(chr_q)
-);
-
 logic [9:0] lp_a;
-wire load_lp = ioctl_wr0 && ioctl_addr[24:10] == 15'h58;    // 0x16000-0x163FF
-dpram_dc #(.widthad_a(10)) line_prom
-(
-    .clock_a(clk), .address_a(ioctl_addr[9:0]), .data_a(ioctl_dout), .wren_a(load_lp),
-    .clock_b(clk), .address_b(lp_a), .q_b(lp_q)
-);
+// both PROMs are dispatcher ROM blocks (load decode there, independent of the variant)
+assign chr_rom_a = chr_a;
+assign chr_q     = chr_rom_q;
+assign lp_rom_a  = lp_a;
+assign lp_q      = lp_rom_q;
 
 /////////////////////////////  Latches and object counters  /////////////////////////////
 
 logic [7:0] sh = 8'd0, sv = 8'd0;       // 74193 15B/15C (H), 16B/16C (V)
 always_ff @(posedge clk) begin
-    if (reset) out_latch <= 8'h00;      // MAME machine_reset clears clown_z
+    if (reset) out_latch <= 8'h00;      // reset clears the output latch
     else if (wr & sel_out) out_latch <= cpu_do;
 
     // H counts visible pixels only; V counts once per visible line (5TCBLB rising at the line start)
@@ -170,7 +176,7 @@ wire        swin  = (sv[7:4] == 4'hF);  // 14C CLK INH outside the V window
 wire        sload = ((sh | 8'h08) == 8'hFF);
 wire  [7:0] sdata = cfg[4] ? ~spr_d : spr_d;
 
-// Rip Cord: line PROMs not dumped; MAME's border (y = 16 solid, x = 0 / 247 solid) as cell entries #unverified
+// Rip Cord: line PROMs not dumped; the border (y = 16 solid, x = 0 / 247 solid) as cell entries #unverified
 wire [3:0] rc_lines = {~((hcnt[7:3] == 5'd0 || hcnt[7:3] == 5'd31) && vcnt[7:3] >= 5'd2),   // O4 solid vertical
                        ~(vcnt[7:3] == 5'd2),                                                  // O3 solid horizontal
                        2'b11};
