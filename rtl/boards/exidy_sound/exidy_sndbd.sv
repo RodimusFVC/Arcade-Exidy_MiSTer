@@ -67,6 +67,18 @@ module exidy_sndbd #(
     input  logic  [3:0] vol_sfx,
     input  logic  [3:0] vol_speech,
 
+    output logic  [7:0] z_rom_q,        // REUSE-2026-10-26: cvsd_rom read data (also Victory's main ROM 8000-BFFF)
+
+    // REUSE-2026-10-26: snd_rom (0) / cvsd_rom (1) lent to the board's RAM pool while lend = 1 (Star Fire colour RAMs).
+    // A ROM download always wins port A (the variant byte arrives after index 0, so lend can still be the last game's).
+    input  logic        lend,
+    input  logic [27:0] lend_aa,
+    input  logic [15:0] lend_ad,
+    input  logic  [1:0] lend_aw,
+    input  logic [13:0] lend_ba,
+    output logic [15:0] lend_qa,
+    output logic [15:0] lend_qb,
+
     output logic signed [15:0] audio
 );
 
@@ -113,19 +125,38 @@ wire   e_ce      = snd_ce;
 // ROMs (dpram_dc, 1-clk read latency; CPU addresses are stable for many clks)
 // ============================================================================
 wire rom_wr = ioctl_wr0 & (ioctl_addr[24:14] == 11'd3);    // 0x0C000-0x0FFFF = CPU 4000-7FFF
-wire cvr_wr = ioctl_wr0 & (ioctl_addr[24:14] == 11'd4);    // 0x10000-0x13FFF = Z80 0000-3FFF
+// REUSE-2026-10-26: the block also holds Victory's main ROM 8000-BFFF (index 0 0x40000-0x43FFF, read by the same pooled
+// Z80 at z_a[13:0]); Victory has no CVSD section. Fax's question bytes at 0x40000 land here too, unread (Fax reads DDR3).
+// Original: wire cvr_wr = ioctl_wr0 & (ioctl_addr[24:14] == 11'd4);    // 0x10000-0x13FFF = Z80 0000-3FFF
+wire cvr_wr = ioctl_wr0 & ((ioctl_addr[24:14] == 11'd4) | (ioctl_addr[24:14] == 11'h010));
 
 logic [7:0] rom_q, cvr_q;
+// REUSE-2026-10-26: original ports (before the lend path) commented out below
+// dpram_dc #(.widthad_a(14), .width_a(8)) snd_rom
+// (
+//     .clock_a(clk), .address_a(ioctl_addr[13:0]), .data_a(ioctl_dout), .wren_a(rom_wr), .q_a(),
+//     .clock_b(clk), .address_b(snd_a[13:0]), .data_b(8'h00), .wren_b(1'b0), .q_b(rom_q)
+// );
+// dpram_dc #(.widthad_a(14), .width_a(8)) cvsd_rom
+// (
+//     .clock_a(clk), .address_a(ioctl_addr[13:0]), .data_a(ioctl_dout), .wren_a(cvr_wr), .q_a(),
+//     .clock_b(clk), .address_b(z_a[13:0]), .data_b(8'h00), .wren_b(1'b0), .q_b(cvr_q)
+// );
+wire ln0 = lend & ~rom_wr, ln1 = lend & ~cvr_wr;
 dpram_dc #(.widthad_a(14), .width_a(8)) snd_rom
 (
-    .clock_a(clk), .address_a(ioctl_addr[13:0]), .data_a(ioctl_dout), .wren_a(rom_wr), .q_a(),
-    .clock_b(clk), .address_b(snd_a[13:0]), .data_b(8'h00), .wren_b(1'b0), .q_b(rom_q)
+    .clock_a(clk), .address_a(ln0 ? lend_aa[13:0] : ioctl_addr[13:0]), .data_a(ln0 ? lend_ad[7:0] : ioctl_dout),
+    .wren_a(rom_wr | (ln0 & lend_aw[0])), .q_a(lend_qa[7:0]),
+    .clock_b(clk), .address_b(lend ? lend_ba : snd_a[13:0]), .data_b(8'h00), .wren_b(1'b0), .q_b(rom_q)
 );
 dpram_dc #(.widthad_a(14), .width_a(8)) cvsd_rom
 (
-    .clock_a(clk), .address_a(ioctl_addr[13:0]), .data_a(ioctl_dout), .wren_a(cvr_wr), .q_a(),
-    .clock_b(clk), .address_b(z_a[13:0]), .data_b(8'h00), .wren_b(1'b0), .q_b(cvr_q)
+    .clock_a(clk), .address_a(ln1 ? lend_aa[27:14] : ioctl_addr[13:0]), .data_a(ln1 ? lend_ad[15:8] : ioctl_dout),
+    .wren_a(cvr_wr | (ln1 & lend_aw[1])), .q_a(lend_qa[15:8]),
+    .clock_b(clk), .address_b(lend ? lend_ba : z_a[13:0]), .data_b(8'h00), .wren_b(1'b0), .q_b(cvr_q)
 );
+assign lend_qb = {cvr_q, rom_q};
+assign z_rom_q = cvr_q;
 
 // ============================================================================
 // Sound CPU decode

@@ -71,7 +71,16 @@ module starfire_main
     input  logic [15:0] hs_a,
     input  logic  [7:0] hs_din,
     output logic  [7:0] hs_dout,
-    input  logic        hs_we
+    input  logic        hs_we,
+
+    // REUSE-2026-10-26: video / colour banks in the board's RAM pool; bank n = bits [n*12 +: 12] / [n*8 +: 8],
+    // 0 vram_e, 1 vram_o, 2 cram_e, 3 cram_o. Port A = CPU / hiscore, port B = scan (shared address)
+    output logic [47:0] pr_aa,
+    output logic [31:0] pr_ad,
+    output logic  [3:0] pr_aw,
+    output logic [11:0] pr_ba,
+    input  logic [31:0] pr_qa,
+    input  logic [31:0] pr_qb
 );
 
 localparam [8:0] H_TOTAL = 9'd320;      // schematic: 256 + 64 (HR) = 0x140 (MAME 0x13F)
@@ -178,16 +187,25 @@ logic       hs_odd = 1'b0;
 always_ff @(posedge clk) hs_odd <= hs_col[0];
 assign hs_dout = hs_odd ? vo_q : ve_q;
 
-dpram_dc #(.widthad_a(12)) vram_e (.clock_a(clk), .address_a(hs_on ? hs_ra : ve_a), .data_a(hs_on ? hs_din : ve_d),
-                                   .wren_a(hs_on ? hs_wr & ~hs_col[0] : ve_w), .q_a(ve_q),
-                                   .clock_b(clk), .address_b(scan_a), .data_b(8'd0), .wren_b(1'b0), .q_b(ve_s));
-dpram_dc #(.widthad_a(12)) vram_o (.clock_a(clk), .address_a(hs_on ? hs_ra : vo_a), .data_a(hs_on ? hs_din : vo_d),
-                                   .wren_a(hs_on ? hs_wr & hs_col[0] : vo_w), .q_a(vo_q),
-                                   .clock_b(clk), .address_b(scan_a), .data_b(8'd0), .wren_b(1'b0), .q_b(vo_s));
-dpram_dc #(.widthad_a(12)) cram_e (.clock_a(clk), .address_a(ce_a), .data_a(ce_d), .wren_a(ce_w), .q_a(ce_q),
-                                   .clock_b(clk), .address_b(scan_a), .data_b(8'd0), .wren_b(1'b0), .q_b(ce_s));
-dpram_dc #(.widthad_a(12)) cram_o (.clock_a(clk), .address_a(co_a), .data_a(co_d), .wren_a(co_w), .q_a(co_q),
-                                   .clock_b(clk), .address_b(scan_a), .data_b(8'd0), .wren_b(1'b0), .q_b(co_s));
+// REUSE-2026-10-26: the four banks live in the board's RAM pool (rtl/exidy_board.sv: Victory's plane blocks hold
+// vram_e / vram_o, the sound board's ROM blocks hold cram_e / cram_o; none of them runs with Star Fire). Same ports,
+// same timing. Original instances below, uncomment (and drop the pr_* assigns) to restore:
+// dpram_dc #(.widthad_a(12)) vram_e (.clock_a(clk), .address_a(hs_on ? hs_ra : ve_a), .data_a(hs_on ? hs_din : ve_d),
+//                                    .wren_a(hs_on ? hs_wr & ~hs_col[0] : ve_w), .q_a(ve_q),
+//                                    .clock_b(clk), .address_b(scan_a), .data_b(8'd0), .wren_b(1'b0), .q_b(ve_s));
+// dpram_dc #(.widthad_a(12)) vram_o (.clock_a(clk), .address_a(hs_on ? hs_ra : vo_a), .data_a(hs_on ? hs_din : vo_d),
+//                                    .wren_a(hs_on ? hs_wr & hs_col[0] : vo_w), .q_a(vo_q),
+//                                    .clock_b(clk), .address_b(scan_a), .data_b(8'd0), .wren_b(1'b0), .q_b(vo_s));
+// dpram_dc #(.widthad_a(12)) cram_e (.clock_a(clk), .address_a(ce_a), .data_a(ce_d), .wren_a(ce_w), .q_a(ce_q),
+//                                    .clock_b(clk), .address_b(scan_a), .data_b(8'd0), .wren_b(1'b0), .q_b(ce_s));
+// dpram_dc #(.widthad_a(12)) cram_o (.clock_a(clk), .address_a(co_a), .data_a(co_d), .wren_a(co_w), .q_a(co_q),
+//                                    .clock_b(clk), .address_b(scan_a), .data_b(8'd0), .wren_b(1'b0), .q_b(co_s));
+assign pr_aa = {co_a, ce_a, hs_on ? hs_ra : vo_a, hs_on ? hs_ra : ve_a};
+assign pr_ad = {co_d, ce_d, hs_on ? hs_din : vo_d, hs_on ? hs_din : ve_d};
+assign pr_aw = {co_w, ce_w, hs_on ? hs_wr & hs_col[0] : vo_w, hs_on ? hs_wr & ~hs_col[0] : ve_w};
+assign pr_ba = scan_a;
+assign {co_q, ce_q, vo_q, ve_q} = pr_qa;
+assign {co_s, ce_s, vo_s, ve_s} = pr_qb;
 
 /////////////////////////////  Shifter / mask (MAME videoram_w / videoram_r)  /////////////////////////////
 

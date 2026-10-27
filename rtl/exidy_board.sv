@@ -243,17 +243,53 @@ logic  [7:0] qrom_d, q0_d, q1_d;
 wire load_q1 = ioctl_wr0 && ioctl_addr[24:14] == 11'h010; // 0x40000-0x43FFF: Victory main ROM
 
 // Victory: qrom0 = foreground planes (port A engine, port B scan; addresses {0, plane, 14 bits}), qrom1 = main ROM 8000-BFFF
-dpram_dc #(.widthad_a(16)) qrom0
+// REUSE-2026-10-26: the three planes need 48K, not 64K (plane index is 0-2 on both ports, A15-A14 never 11): 32K
+// (R, G) + 16K (B), read data muxed by the bank bit registered with the address (dpram_dc: registered address,
+// unregistered q). Original below, uncomment (and drop the split) to restore:
+// dpram_dc #(.widthad_a(16)) qrom0
+// (
+//     .clock_a(clk), .address_a(v_fga_addr[15:0]), .data_a(v_fga_d), .wren_a(vic & v_fga_we), .q_a(v_fga_q),
+//     .clock_b(clk), .address_b(v_fgb_addr[15:0]), .q_b(q0_d)
+// );
+logic [7:0] q0l_qa, q0l_qb, q0h_qa, q0h_qb;
+logic       fga_hi = 1'b0, fgb_hi = 1'b0;
+always_ff @(posedge clk) begin
+    fga_hi <= v_fga_addr[15];
+    fgb_hi <= v_fgb_addr[15];
+end
+// RAM pool: Star Fire's vram_e / vram_o banks use these two blocks (Star Fire and Victory never run together)
+logic [47:0] sf_pr_aa;
+logic [31:0] sf_pr_ad, sf_pr_qa, sf_pr_qb;
+logic  [3:0] sf_pr_aw;
+logic [11:0] sf_pr_ba;
+dpram_dc #(.widthad_a(15)) qrom0_rg
 (
-    .clock_a(clk), .address_a(v_fga_addr[15:0]), .data_a(v_fga_d), .wren_a(vic & v_fga_we), .q_a(v_fga_q),
-    .clock_b(clk), .address_b(v_fgb_addr[15:0]), .q_b(q0_d)
+    .clock_a(clk), .address_a(sf ? {3'b000, sf_pr_aa[11:0]} : v_fga_addr[14:0]), .data_a(sf ? sf_pr_ad[7:0] : v_fga_d),
+    .wren_a(sf ? sf_pr_aw[0] : vic & v_fga_we & ~v_fga_addr[15]), .q_a(q0l_qa),
+    .clock_b(clk), .address_b(sf ? {3'b000, sf_pr_ba} : v_fgb_addr[14:0]), .data_b(8'h00), .wren_b(1'b0), .q_b(q0l_qb)
 );
+dpram_dc #(.widthad_a(14)) qrom0_b
+(
+    .clock_a(clk), .address_a(sf ? {2'b00, sf_pr_aa[23:12]} : v_fga_addr[13:0]), .data_a(sf ? sf_pr_ad[15:8] : v_fga_d),
+    .wren_a(sf ? sf_pr_aw[1] : vic & v_fga_we & v_fga_addr[15]), .q_a(q0h_qa),
+    .clock_b(clk), .address_b(sf ? {2'b00, sf_pr_ba} : v_fgb_addr[13:0]), .data_b(8'h00), .wren_b(1'b0), .q_b(q0h_qb)
+);
+logic [15:0] sf_lend_qa, sf_lend_qb;     // banks 2 / 3 from the sound board's ROM blocks
+assign sf_pr_qa = {sf_lend_qa, q0h_qa, q0l_qa};
+assign sf_pr_qb = {sf_lend_qb, q0h_qb, q0l_qb};
+assign v_fga_q = fga_hi ? q0h_qa : q0l_qa;
+assign q0_d    = fgb_hi ? q0h_qb : q0l_qb;
 
-dpram_dc #(.widthad_a(14)) qrom1
-(
-    .clock_a(clk), .address_a(ioctl_addr[13:0]), .data_a(ioctl_dout), .wren_a(load_q1),
-    .clock_b(clk), .address_b(z_a[13:0]), .q_b(q1_d)
-);
+// REUSE-2026-10-26: Victory's main ROM 8000-BFFF now lives in the sound board's cvsd_rom (same pooled Z80, same
+// z_a[13:0] port; Victory has no CVSD): one 16K block fewer. Original below, uncomment (and drop the assign) to restore:
+// dpram_dc #(.widthad_a(14)) qrom1
+// (
+//     .clock_a(clk), .address_a(ioctl_addr[13:0]), .data_a(ioctl_dout), .wren_a(load_q1),
+//     .clock_b(clk), .address_b(z_a[13:0]), .q_b(q1_d)
+// );
+logic [7:0] z_rom_q;
+assign q1_d = z_rom_q;
+wire unused_q1 = &{1'b0, load_q1};
 
 // Fax: question ROM byte = index-0 byte 0x20000 + {bank, A12-A0}; banks 24-31 unpopulated (FF, no fetch).
 // The 6502 is held (cpu_ce) while a question-ROM read waits for its byte.
@@ -367,6 +403,10 @@ exidy_sndbd snd_b
     .victory(vic), .vic_cmd_wr(v_snd_wr), .vic_cmd(z_do), .vic_resp_rd(v_snd_rd), .vic_resp(v_snd_resp),
     .vic_status(v_snd_status),
     .vol_music(vol_music), .vol_sfx(vol_sfx), .vol_speech(vol_speech),
+    .z_rom_q(z_rom_q),          // REUSE-2026-10-26: Victory main ROM 8000-BFFF (was qrom1)
+    // REUSE-2026-10-26: Star Fire's cram_e / cram_o banks in snd_rom / cvsd_rom (no sound 6502 / CVSD on Star Fire)
+    .lend(sf), .lend_aa({2'b00, sf_pr_aa[47:36], 2'b00, sf_pr_aa[35:24]}), .lend_ad(sf_pr_ad[31:16]),
+    .lend_aw(sf_pr_aw[3:2]), .lend_ba({2'b00, sf_pr_ba}), .lend_qa(sf_lend_qa), .lend_qb(sf_lend_qb),
     .audio(sndbd_audio)
 );
 
@@ -390,8 +430,15 @@ circus_snd circus_s
 );
 
 assign z_di    = sf ? sf_z_di : vic ? v_z_di : snd_z_di;
-wire signed [15:0] brd_l = sf ? sf_audio_l : cp ? 16'sd0 : circus ? circus_audio : gen1 ? gen1_audio : sndbd_audio;
-wire signed [15:0] brd_r = sf ? sf_audio_r : brd_l;
+// REUSE-2026-10-26: gen-1, Circus-family and Star Fire / Fire One sound is the discrete sound engine's program (every
+// MRA of variants 5-9 / 11 carries index 5, which switches audio to the engine). Their analog RTL models were a second
+// implementation that never played; with no fanout Quartus prunes them (~11k ALM, 6 DSP). Their digital fronts
+// (g1_lat*/tone/mus, sf_lat*/sf_pit) still feed the engine. Original below, uncomment to restore the fallbacks:
+// wire signed [15:0] brd_l = sf ? sf_audio_l : cp ? 16'sd0 : circus ? circus_audio : gen1 ? gen1_audio : sndbd_audio;
+// wire signed [15:0] brd_r = sf ? sf_audio_r : brd_l;
+wire signed [15:0] brd_l = (sf | cp | circus | gen1) ? 16'sd0 : sndbd_audio;
+wire signed [15:0] brd_r = brd_l;
+wire unused_fallback = &{1'b0, sf_audio_l, sf_audio_r, circus_audio, gen1_audio};
 assign audio   = ds_on ? ds_l : brd_l;
 assign audio_r = ds_on ? ds_r : brd_r;
 
@@ -457,7 +504,8 @@ starfire_main starfire_b
     .snd_wr(sf_snd_wr), .snd_a0(sf_snd_a0), .music_wr(sf_mus_wr), .music_a(sf_mus_a),
     .pix_x(s_pix_x), .pix_y(s_pix_y), .pix_rgb(s_pix_rgb), .pix_pen(s_pix_pen),
     .pal_ri(fb_q[5:0]), .pal_rq(s_pal_rq), .vbl_raw(s_vblank_raw),
-    .hs_a(hs_address), .hs_din(hs_data_in), .hs_dout(s_hs_dout), .hs_we(hs_write && sf)
+    .hs_a(hs_address), .hs_din(hs_data_in), .hs_dout(s_hs_dout), .hs_we(hs_write && sf),
+    .pr_aa(sf_pr_aa), .pr_ad(sf_pr_ad), .pr_aw(sf_pr_aw), .pr_ba(sf_pr_ba), .pr_qa(sf_pr_qa), .pr_qb(sf_pr_qb)
 );
 
 starfire_snd starfire_s
@@ -508,8 +556,10 @@ carpolo_main carpolo_b
 logic       wbuf = 1'b0;
 wire        pix_vis = (pix_x < 9'd256) && (pix_y < 9'd256);
 wire [16:0] fb_wa = {wbuf, pix_y[7:0], pix_x[7:0]};
-// Circus family: MAME's 248-px window (H 8-255) mirrors onto itself; Star Fire: lines 32-255
-wire [16:0] fb_ra = {~wbuf, (sf ? 8'd31 : 8'd255) - pix_y[7:0], (circus ? 8'd7 : 8'd255) - pix_x[7:0]};
+// Circus family: MAME's 248-px window (H 8-255) mirrors onto itself; Star Fire: lines 32-255; Car Polo: its 240-px
+// window (H 0-239) mirrors onto itself (FLIP-2026-10-26: was 255 - x, a 180 turn shifted 16 px, board sim).
+// Original: wire [16:0] fb_ra = {~wbuf, (sf ? 8'd31 : 8'd255) - pix_y[7:0], (circus ? 8'd7 : 8'd255) - pix_x[7:0]};
+wire [16:0] fb_ra = {~wbuf, (sf ? 8'd31 : 8'd255) - pix_y[7:0], (circus ? 8'd7 : cp ? 8'd239 : 8'd255) - pix_x[7:0]};
 
 always_ff @(posedge clk)
     if (ce_pix && pix_x == 9'd0 && pix_y == 9'd256) wbuf <= ~wbuf;

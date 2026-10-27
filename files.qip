@@ -1,6 +1,13 @@
 set_global_assignment -name SYSTEMVERILOG_FILE Arcade-Exidy.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/exidy_board.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/ram_rom/ddr_rom.sv
+# ART-2026-10-26: MAME artwork v2 (master copies, md5 = Centipede/Universal) + DDRAM arbiter (Universal)
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/ram_rom/ddr_arb.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/art/art_xclk.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/art/artwork.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/art/art_resample.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/art/png_decode.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/art/inflate.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/exidy_dial.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/exidy_paddle.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/exidy_stick.sv

@@ -10,6 +10,9 @@ module  pll_0002(
 	// interface 'outclk0'
 	output wire outclk_0,
 
+	// interface 'outclk1'
+	output wire outclk_1,
+
 	// interface 'locked'
 	output wire locked,
 
@@ -26,11 +29,12 @@ module  pll_0002(
 		.pll_fractional_cout(32),
 		.pll_dsm_out_sel("1st_order"),
 		.operation_mode("direct"),
-		.number_of_clocks(1),
+		// HAND-EDITED (2026-10-26): C1 = 45.156 MHz = 2 x C0 (artwork / video back end / DDRAM domain). Was number_of_clocks(1).
+		.number_of_clocks(2),
 		.output_clock_frequency0("22.578000 MHz"),
 		.phase_shift0("0 ps"),
 		.duty_cycle0(50),
-		.output_clock_frequency1("0 MHz"),
+		.output_clock_frequency1("45.156000 MHz"),
 		.phase_shift1("0 ps"),
 		.duty_cycle1(50),
 		.output_clock_frequency2("0 MHz"),
@@ -100,13 +104,15 @@ module  pll_0002(
 		.c_cnt_in_src0("ph_mux_clk"),
 		.c_cnt_bypass_en0("false"),
 		.c_cnt_odd_div_duty_en0("false"),
-		.c_cnt_hi_div1(1),
-		.c_cnt_lo_div1(1),
+		// HAND-EDITED (2026-10-26): C1 = 5 + 4 odd = 9 -> 406.404 / 9 = 45.156 MHz, same VCO as C0 (2:1 locked).
+		// Was hi 1 / lo 1 / bypass true / odd duty false (unused).
+		.c_cnt_hi_div1(5),
+		.c_cnt_lo_div1(4),
 		.c_cnt_prst1(1),
 		.c_cnt_ph_mux_prst1(0),
 		.c_cnt_in_src1("ph_mux_clk"),
-		.c_cnt_bypass_en1("true"),
-		.c_cnt_odd_div_duty_en1("false"),
+		.c_cnt_bypass_en1("false"),
+		.c_cnt_odd_div_duty_en1("true"),
 		.c_cnt_hi_div2(1),
 		.c_cnt_lo_div2(1),
 		.c_cnt_prst2(1),
@@ -231,7 +237,7 @@ module  pll_0002(
 		.pll_slf_rst("false")
 	) altera_pll_i (
 		.rst	(rst),
-		.outclk	({outclk_0}),
+		.outclk	({outclk_1, outclk_0}),
 		.locked	(locked),
 		.reconfig_to_pll	(reconfig_to_pll),
 		.fboutclk	( ),

@@ -43,7 +43,10 @@ wire  [7:0] ioctl_din;
 wire        ioctl_wr;
 wire  [7:0] ioctl_index;
 wire        ddr_ioctl_wait;     // ddr_rom: index-0 byte being mirrored to DDR3
-wire [24:0] ioctl_addr;
+// ART-2026-10-26: original
+// wire [24:0] ioctl_addr;
+wire [26:0] ioctl_addr27;                     // hps_io's full address: the artwork download can pass 32 MB
+wire [24:0] ioctl_addr = ioctl_addr27[24:0];  // every other ioctl user
 wire  [7:0] ioctl_dout;
 wire [15:0] joystick_0, joystick_1, joystick_2, joystick_3;
 wire [15:0] joystick_r_analog_0, joystick_r_analog_1;   // right analog sticks: [15:8] Y, [7:0] X, signed
@@ -143,8 +146,14 @@ wire vert_view = game_vert & ~status[12];
 
 wire [1:0] ar = status[9:8];
 
-assign VIDEO_ARX = (!ar) ? (vert_view ? 12'd3 : 12'd4) : (ar - 1'd1);
-assign VIDEO_ARY = (!ar) ? (vert_view ? 12'd4 : 12'd3) : 12'd0;
+wire        art_fb;                // artwork framebuffer on HDMI: square canvas pixels
+wire        art_ioctl_wait, art_avail;
+wire [11:0] art_cw, art_ch;
+// ART-2026-10-26: original
+// assign VIDEO_ARX = (!ar) ? (vert_view ? 12'd3 : 12'd4) : (ar - 1'd1);
+// assign VIDEO_ARY = (!ar) ? (vert_view ? 12'd4 : 12'd3) : 12'd0;
+assign VIDEO_ARX = (!ar) ? (art_fb ? art_cw : vert_view ? 12'd3 : 12'd4) : (ar - 1'd1);
+assign VIDEO_ARY = (!ar) ? (art_fb ? art_ch : vert_view ? 12'd4 : 12'd3) : 12'd0;
 
 // Status bit layout kept the same as the Pac-Man core
 `include "build_id.v"
@@ -152,6 +161,7 @@ localparam CONF_STR = {
 	"EXIDY;;",
 	"P1,Video Options;",
 	"P1O89,Aspect Ratio,Original,Full screen,[ARC1],[ARC2];",
+	"P1OC,Orientation,Vert,Horz;",   // ORIENT-2026-10-26: fleet line (Universal); Horz turns the artwork view
 	"P1OB,HDMI Flip,Off,On;",
 	"P1OM,CRT Flip,Off,On;",
 	"P1O[40:37],H Position (CRT),0,+1,+2,+3,+4,+5,+6,+7,-8,-7,-6,-5,-4,-3,-2,-1;",
@@ -166,6 +176,15 @@ localparam CONF_STR = {
 	"H1P5-,Paddle / spinner / mouse / stick;",
 	"H3P5-,Flight Stick;",
 	"H3P5O[75],Stick Mode,Flight Control,Standard Control;",
+	// ART-2026-10-26: MAME artwork, bits 80-89 (fleet OSD block range for artwork)
+	"H5P5-,Artwork (MAME layout views);",
+	"H5P5O[83:80],View,Off,View 1,View 2,View 3,View 4,View 5,View 6,View 7,View 8,View 9,View 10,View 11,View 12,View 13,View 14,View 15;",
+	"H5P5O[84],Backdrop,On,Off;",
+	"H5P5O[85],Overlay,On,Off;",
+	"H5P5O[86],Bezel,On,Off;",
+	"H5P5O[87],Control Panel,On,Off;",
+	"H5P5O[88],Side Art,On,Off;",
+	"H5P5O[89],Zoom to Screen,Off,On;",
 	"-;",
 	"P2,Game Audio;",
 	"P2O[48:45],Music Volume,Default,+1,+2,+3,+4,+5,+6,+7,Off,-7,-6,-5,-4,-3,-2,-1;",
@@ -205,19 +224,24 @@ hps_io #(.CONF_STR(CONF_STR)) hps_io
 
 	.buttons(buttons),
 	.status(status),
-	.status_menumask({~(game_flags[6] | game_sf), ~game_sf, ~ds_on, ~game_flags[6], direct_video}),
+	// ART-2026-10-26: original (bit 5 = artwork entries; the Game Options page also shows when the game has artwork)
+	// .status_menumask({~(game_flags[6] | game_sf), ~game_sf, ~ds_on, ~game_flags[6], direct_video}),
+	.status_menumask({~art_avail, ~(game_flags[6] | game_sf | art_avail), ~game_sf, ~ds_on, ~game_flags[6], direct_video}),
 
 	.ioctl_download(ioctl_download),
 	.ioctl_upload(ioctl_upload),
 	.ioctl_upload_req(ioctl_upload_req),
 	.ioctl_wr(ioctl_wr),
-	.ioctl_addr(ioctl_addr),
+	// ART-2026-10-26: original
+	// .ioctl_addr(ioctl_addr),
+	.ioctl_addr(ioctl_addr27),
 	.ioctl_dout(ioctl_dout),
 	.ioctl_din(ioctl_din),
 	.ioctl_index(ioctl_index),
 	// ROOM-2026-10-24: original below
 	// .ioctl_wait(1'b0),
-	.ioctl_wait(ddr_ioctl_wait),
+	// ART-2026-10-26: was .ioctl_wait(ddr_ioctl_wait),
+	.ioctl_wait(ddr_ioctl_wait | art_ioctl_wait),
 
 	.joystick_0(joystick_0),
 	.joystick_1(joystick_1),
@@ -239,11 +263,14 @@ hps_io #(.CONF_STR(CONF_STR)) hps_io
 
 ////////////////////   CLOCKS   ///////////////////
 
+wire        CLK_2X;         // ART-2026-10-26: 45.156 MHz = 2 x CLK_SYS, same VCO (2:1 locked): artwork + video back end + DDRAM
+
 pll pll
 (
 	.refclk(CLK_50M),
 	.rst(0),
 	.outclk_0(CLK_SYS),
+	.outclk_1(CLK_2X),
 	.reconfig_to_pll(reconfig_to_pll),
 	.reconfig_from_pll(reconfig_from_pll),
 	.locked(locked)
@@ -500,13 +527,122 @@ pause #(8,8,8,20) pause
 
 wire hs, vs;
 wire [7:0] r, g, b;
-wire ce_pix;
+wire ce_pix;                       // ART-2026-10-26: CLK_2X pixel enable (art_xclk); the board's is bd_ce
+wire bd_ce;                        // board pixel enable (CLK_SYS)
 
 wire rotate_ccw = ~game_flags[7];  // ROT270 sets rotate CCW, ROT90 sets CW
 wire no_rotate  = ~game_vert | status[12] | direct_video;
 wire flip       = status[11];
-// ROOM-2026-10-24: screen_rotate's DDR3 writes go through ddr_rom (shared port, Universal pattern). Original:
-// screen_rotate screen_rotate(.*);
+
+// ART-2026-10-26: video back end on CLK_2X (art_xclk -> artwork -> arcade_video / screen_rotate, CLK_VIDEO = CLK_2X,
+// DDRAM_CLK = CLK_2X); the board, pause, hiscore and ddr_rom stay on CLK_SYS. Same structure as the Universal core
+// (Claude/artwork_integration_2026-10-24.md there). ddr_arb shares the DDRAM port: screen_rotate, ddr_rom (bridged
+// from CLK_SYS, Fax question ROMs) and the artwork (bursts split, lowest priority). Artwork download = ioctl index 6
+// (5 is the discrete sound program).
+wire  [7:0] av_r, av_g, av_b;      // artwork output (CLK_2X): the board picture one pixel late, artwork applied
+wire        av_hs, av_vs, av_hbl, av_vbl;
+wire [27:0] v_px;
+wire        a_wr;
+wire [26:0] a_addr;
+wire  [7:0] a_dout;
+wire        art_wait;
+art_xclk #(.IDX(8'd6), .VW(28)) art_xclk
+(
+	.clk_sys(CLK_SYS), .clk_art(CLK_2X),
+	.bd_ce(bd_ce), .bd_px({hs, vs, hblank, vblank, rgb_out}), .ce_art(ce_pix), .px(v_px),
+	.ioctl_wr(ioctl_wr), .ioctl_index(ioctl_index), .ioctl_addr(ioctl_addr27), .ioctl_dout(ioctl_dout),
+	.ioctl_wait(art_ioctl_wait), .a_wr(a_wr), .a_addr(a_addr), .a_dout(a_dout), .art_wait(art_wait)
+);
+
+// MAME artwork (OSD Game Options page): native composite on the core video (one pixel late), full view through the
+// DDR3 framebuffer on HDMI. CRT Flip: the board turns its picture 180 degrees through flip_fb. Every set is ROT0 and
+// the core has no Orientation entry, so turn is 0.
+wire        art_run;
+wire [31:0] art_fb_base;
+wire  [7:0] art_burstcnt, art_be;
+wire [28:0] art_addr;
+wire [63:0] art_din, art_dout;
+wire        art_rd, art_we, art_busy, art_dout_ready;
+artwork #(.IDX(8'd6)) artwork
+(
+	.clk(CLK_2X),
+	.sel(status[83:80]), .layer_off({status[87], status[86:84]}), .side_off(status[88]), .zoom(status[89]),
+	// ORIENT-2026-10-26: original
+	// .crt_flip(status[22]), .hdmi_flip(status[11]), .turn(1'b0), .avail(art_avail),
+	.crt_flip(status[22]), .hdmi_flip(status[11]), .turn(status[12]), .avail(art_avail),
+	.hdmi_w(HDMI_WIDTH), .hdmi_h(HDMI_HEIGHT),
+	.ioctl_download(ioctl_download), .ioctl_index(ioctl_index), .ioctl_wr(a_wr),
+	.ioctl_addr(a_addr), .ioctl_dout(a_dout), .ioctl_wait(art_wait),
+	.ce_pix(ce_pix),
+	.hs_in(v_px[27]), .vs_in(v_px[26]), .hblank_in(v_px[25]), .vblank_in(v_px[24]), .rgb_in(v_px[23:0]),
+	.hs_out(av_hs), .vs_out(av_vs), .hblank_out(av_hbl), .vblank_out(av_vbl), .rgb_out({av_r, av_g, av_b}),
+	.running(art_run), .ddr_owner(), .canvas_w(art_cw), .canvas_h(art_ch),
+	.fb_base(art_fb_base), .fb_vbl(FB_VBL),
+	.DDRAM_CLK(), .DDRAM_BUSY(art_busy), .DDRAM_BURSTCNT(art_burstcnt), .DDRAM_ADDR(art_addr),
+	.DDRAM_DOUT(art_dout), .DDRAM_DOUT_READY(art_dout_ready), .DDRAM_RD(art_rd),
+	.DDRAM_DIN(art_din), .DDRAM_BE(art_be), .DDRAM_WE(art_we)
+);
+assign art_fb = art_run & ~direct_video;
+
+// ART-2026-10-26: original block (screen_rotate through ddr_rom on CLK_SYS, arcade_video on CLK_SYS) commented out:
+// // ROOM-2026-10-24: screen_rotate's DDR3 writes go through ddr_rom (shared port, Universal pattern). Original:
+// // screen_rotate screen_rotate(.*);
+// wire        sr_we;
+// wire [28:0] sr_addr;
+// wire [63:0] sr_din;
+// wire  [7:0] sr_be;
+// wire        ddr_byte_en, ddr_byte_rdy;
+// wire [24:0] ddr_byte_addr;
+// wire  [7:0] ddr_byte_q;
+//
+// screen_rotate screen_rotate
+// (
+// 	.CLK_VIDEO(CLK_VIDEO), .CE_PIXEL(CE_PIXEL),
+// 	.VGA_R(VGA_R), .VGA_G(VGA_G), .VGA_B(VGA_B), .VGA_HS(VGA_HS), .VGA_VS(VGA_VS), .VGA_DE(VGA_DE),
+// 	.rotate_ccw(rotate_ccw), .no_rotate(no_rotate), .flip(flip), .video_rotated(video_rotated),
+// 	.FB_EN(FB_EN), .FB_FORMAT(FB_FORMAT), .FB_WIDTH(FB_WIDTH), .FB_HEIGHT(FB_HEIGHT), .FB_BASE(FB_BASE),
+// 	.FB_STRIDE(FB_STRIDE), .FB_VBL(FB_VBL), .FB_LL(FB_LL),
+// 	.DDRAM_CLK(), .DDRAM_BUSY(1'b0), .DDRAM_BURSTCNT(), .DDRAM_ADDR(sr_addr), .DDRAM_DIN(sr_din),
+// 	.DDRAM_BE(sr_be), .DDRAM_WE(sr_we), .DDRAM_RD()
+// );
+//
+// // Every index-0 byte mirrored to DDR3 at 0x3C000000; Fax reads its question ROMs from there (byte port)
+// ddr_rom ddr_rom
+// (
+// 	.clk(CLK_SYS),
+// 	.ioctl_download(ioctl_download),
+// 	.ioctl_wr0(ioctl_wr & (ioctl_index == 8'd0)),
+// 	.ioctl_addr(ioctl_addr),
+// 	.ioctl_dout(ioctl_dout),
+// 	.ioctl_wait(ddr_ioctl_wait),
+// 	.row_req(1'b0), .row_addr(25'd0), .row_q(), .row_rdy(),
+// 	.byte_en(ddr_byte_en), .byte_addr(ddr_byte_addr), .byte_q(ddr_byte_q), .byte_rdy(ddr_byte_rdy),
+// 	.sr_we(sr_we), .sr_addr(sr_addr), .sr_din(sr_din), .sr_be(sr_be),
+// 	.DDRAM_CLK(DDRAM_CLK), .DDRAM_BUSY(DDRAM_BUSY), .DDRAM_BURSTCNT(DDRAM_BURSTCNT), .DDRAM_ADDR(DDRAM_ADDR),
+// 	.DDRAM_DOUT(DDRAM_DOUT), .DDRAM_DOUT_READY(DDRAM_DOUT_READY), .DDRAM_RD(DDRAM_RD), .DDRAM_DIN(DDRAM_DIN),
+// 	.DDRAM_BE(DDRAM_BE), .DDRAM_WE(DDRAM_WE)
+// );
+//
+// arcade_video #(256,24) arcade_video
+// (
+// 	.*,
+//
+// 	.clk_video(CLK_SYS),
+//
+// 	.RGB_in(rgb_out),
+// 	.HBlank(hblank),
+// 	.VBlank(vblank),
+// 	.HSync(hs),
+// 	.VSync(vs),
+//
+// 	.fx(status[18:16])
+// );
+
+wire        sr_fb_en;
+wire  [4:0] sr_fb_format;
+wire [11:0] sr_fb_w, sr_fb_h;
+wire [31:0] sr_fb_base;
+wire [13:0] sr_fb_stride;
 wire        sr_we;
 wire [28:0] sr_addr;
 wire [63:0] sr_din;
@@ -520,13 +656,26 @@ screen_rotate screen_rotate
 	.CLK_VIDEO(CLK_VIDEO), .CE_PIXEL(CE_PIXEL),
 	.VGA_R(VGA_R), .VGA_G(VGA_G), .VGA_B(VGA_B), .VGA_HS(VGA_HS), .VGA_VS(VGA_VS), .VGA_DE(VGA_DE),
 	.rotate_ccw(rotate_ccw), .no_rotate(no_rotate), .flip(flip), .video_rotated(video_rotated),
-	.FB_EN(FB_EN), .FB_FORMAT(FB_FORMAT), .FB_WIDTH(FB_WIDTH), .FB_HEIGHT(FB_HEIGHT), .FB_BASE(FB_BASE),
-	.FB_STRIDE(FB_STRIDE), .FB_VBL(FB_VBL), .FB_LL(FB_LL),
+	.FB_EN(sr_fb_en), .FB_FORMAT(sr_fb_format), .FB_WIDTH(sr_fb_w), .FB_HEIGHT(sr_fb_h), .FB_BASE(sr_fb_base),
+	.FB_STRIDE(sr_fb_stride), .FB_VBL(FB_VBL), .FB_LL(FB_LL),
 	.DDRAM_CLK(), .DDRAM_BUSY(1'b0), .DDRAM_BURSTCNT(), .DDRAM_ADDR(sr_addr), .DDRAM_DIN(sr_din),
 	.DDRAM_BE(sr_be), .DDRAM_WE(sr_we), .DDRAM_RD()
 );
 
-// Every index-0 byte mirrored to DDR3 at 0x3C000000; Fax reads its question ROMs from there (byte port)
+assign FB_EN     = art_fb | sr_fb_en;
+assign FB_FORMAT = art_fb ? 5'b00110    : sr_fb_format;
+assign FB_WIDTH  = art_fb ? art_cw      : sr_fb_w;
+assign FB_HEIGHT = art_fb ? art_ch      : sr_fb_h;
+assign FB_BASE   = art_fb ? art_fb_base : sr_fb_base;
+assign FB_STRIDE = art_fb ? 14'd8192    : sr_fb_stride;
+
+// Every index-0 byte mirrored to DDR3 at 0x3C000000; Fax reads its question ROMs from there (byte port).
+// ART-2026-10-26: its DDRAM port goes to ddr_arb's G port (bridged CLK_SYS -> CLK_2X); screen_rotate no longer
+// passes through it.
+wire        g_busy, g_dout_ready, g_rd, g_we;
+wire [63:0] g_dout, g_din;
+wire [28:0] g_addr;
+wire  [7:0] g_be;
 ddr_rom ddr_rom
 (
 	.clk(CLK_SYS),
@@ -537,7 +686,23 @@ ddr_rom ddr_rom
 	.ioctl_wait(ddr_ioctl_wait),
 	.row_req(1'b0), .row_addr(25'd0), .row_q(), .row_rdy(),
 	.byte_en(ddr_byte_en), .byte_addr(ddr_byte_addr), .byte_q(ddr_byte_q), .byte_rdy(ddr_byte_rdy),
-	.sr_we(sr_we), .sr_addr(sr_addr), .sr_din(sr_din), .sr_be(sr_be),
+	.sr_we(1'b0), .sr_addr(29'd0), .sr_din(64'd0), .sr_be(8'd0),
+	.DDRAM_CLK(), .DDRAM_BUSY(g_busy), .DDRAM_BURSTCNT(), .DDRAM_ADDR(g_addr),
+	.DDRAM_DOUT(g_dout), .DDRAM_DOUT_READY(g_dout_ready), .DDRAM_RD(g_rd), .DDRAM_DIN(g_din),
+	.DDRAM_BE(g_be), .DDRAM_WE(g_we)
+);
+
+// DDRAM port: screen_rotate > ddr_rom > artwork at every command slot (Universal's settings: artwork bursts split into
+// 8-beat pieces, at most 64 artwork read beats in flight, 32 while the game read ROM data from DDR3 recently)
+ddr_arb #(.CHUNK(8), .RWIN(64), .RWIN_G(32), .G_HOLD(4096), .SDEPTH(8)) ddr_arb
+(
+	.clk(CLK_2X), .clk_sys(CLK_SYS),
+	// screen_rotate's picture is not shown while the artwork framebuffer is (its writes would only take bandwidth)
+	.sr_we(sr_we & ~art_fb), .sr_addr(sr_addr), .sr_din(sr_din), .sr_be(sr_be),
+	.g_rd(g_rd), .g_we(g_we), .g_addr(g_addr), .g_din(g_din), .g_be(g_be),
+	.g_busy(g_busy), .g_dout(g_dout), .g_dout_ready(g_dout_ready),
+	.a_rd(art_rd), .a_we(art_we), .a_burstcnt(art_burstcnt), .a_addr(art_addr), .a_din(art_din), .a_be(art_be),
+	.a_busy(art_busy), .a_dout(art_dout), .a_dout_ready(art_dout_ready),
 	.DDRAM_CLK(DDRAM_CLK), .DDRAM_BUSY(DDRAM_BUSY), .DDRAM_BURSTCNT(DDRAM_BURSTCNT), .DDRAM_ADDR(DDRAM_ADDR),
 	.DDRAM_DOUT(DDRAM_DOUT), .DDRAM_DOUT_READY(DDRAM_DOUT_READY), .DDRAM_RD(DDRAM_RD), .DDRAM_DIN(DDRAM_DIN),
 	.DDRAM_BE(DDRAM_BE), .DDRAM_WE(DDRAM_WE)
@@ -547,13 +712,13 @@ arcade_video #(256,24) arcade_video
 (
 	.*,
 
-	.clk_video(CLK_SYS),
+	.clk_video(CLK_2X),
 
-	.RGB_in(rgb_out),
-	.HBlank(hblank),
-	.VBlank(vblank),
-	.HSync(hs),
-	.VSync(vs),
+	.RGB_in({av_r, av_g, av_b}),
+	.HBlank(av_hbl),
+	.VBlank(av_vbl),
+	.HSync(av_hs),
+	.VSync(av_vs),
 
 	.fx(status[18:16])
 );
@@ -693,7 +858,8 @@ exidy_board board
 	.board_cfg(game_flags2),
 	.board_cfg2(game_cfg2),
 	.col_init({col_init[0], col_init[1], col_init[2]}),
-	.ce_pix(ce_pix),
+	// ART-2026-10-26: was .ce_pix(ce_pix),
+	.ce_pix(bd_ce),
 
 	.in0(in_port[0]),
 	.dsw(in_port[1]),
