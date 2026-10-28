@@ -36,7 +36,7 @@
 //
 //============================================================================
 
-module exidy_board
+module exidy_dispatcher
 (
     input  logic        clk,            // 22.578 MHz
     input  logic        reset,

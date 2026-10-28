@@ -86,7 +86,7 @@ assign BUTTONS = 0;
 ///////////////////////////////////////////////////
 
 // MRA index 1:
-//   byte 0      board variant (see rtl/exidy_board.sv)
+//   byte 0      board variant (see rtl/exidy_dispatcher.sv)
 //   byte 1      flags: [0] 4-way joystick, [2] coins are 2-frame pulses, [4] vertical, [5] paddle reversed,
 //               [6] paddle game (shows the Paddle OSD page), [7] vertical is ROT90
 //   byte 2      board config 2: gen-1 map options (see rtl/boards/exidy6502/exidy_main.sv)
@@ -628,7 +628,7 @@ ctl_paddle #(.PMIN(8'd0), .PMAX(8'd63), .PCEN(8'd32), .PAUSE_MODE(1)) fo_paddle2
 	.left(dir2_raw[1]), .right(dir2_raw[0]), .pos(fo_p2)
 );
 
-exidy_board board
+exidy_dispatcher board
 (
 	.clk(CLK_SYS),
 	.reset(reset),

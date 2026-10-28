@@ -879,4 +879,89 @@ typedef struct packed {
     logic [15:0] right;                 // signed
 } jt51_o_t;
 
+// POKEY (pokey_glue around pokey_cx; enable_179 1, keyboard scan / SIO inactive). POT_CMP stays an instance parameter,
+// so a slot serves only boards with the same value. reset_n is on the bus: each board resets it with its CPU
+typedef struct packed {
+    logic        reset_n;
+    logic        ce;
+    logic        wr_en;
+    logic  [3:0] addr;
+    logic  [7:0] din;
+    logic  [7:0] pot_in;
+} pokey_i_t;
+
+typedef struct packed {
+    logic  [7:0] dout;
+    logic  [3:0] ch0;                   // channel volumes while the channel output is high
+    logic  [3:0] ch1;
+    logic  [3:0] ch2;
+    logic  [3:0] ch3;
+    logic  [7:0] pot_count;
+} pokey_o_t;
+
+// AY-3-8910 (jt49_bus, sel = 1; inputs as ay_i_t) with rst_n on the bus: a board resets it with its CPU. Outputs: ay_o_t
+typedef struct packed {
+    logic        rst_n;
+    logic        ce;
+    logic        bdir;
+    logic        bc1;
+    logic  [7:0] din;
+    logic  [7:0] ioa_in;
+    logic  [7:0] iob_in;
+} ayr_i_t;
+
+// 93C46 serial EEPROM, 128 x 8 (eeprom_93c46). ext_* = the NVRAM save / load port (CPU held or paused)
+typedef struct packed {
+    logic        reset;
+    logic        clear;
+    logic        wr;
+    logic        di;
+    logic        sk;
+    logic        cs;
+    logic        ext_sel;
+    logic  [6:0] ext_addr;
+    logic  [7:0] ext_din;
+    logic        ext_we;
+} eeprom93c46_i_t;
+
+typedef struct packed {
+    logic        dout;
+    logic  [7:0] ext_q;
+} eeprom93c46_o_t;
+
+// ALPHA-8201 / 8302 protection MCU (alpha8201: HMCS40 core + 1K shared RAM). ext_* = the main CPU's side of the shared
+// RAM, mcu_addr / mcu_data = its program ROM
+typedef struct packed {
+    logic        reset;
+    logic        pause;
+    logic        mcu_start;
+    logic        bus_dir;
+    logic  [9:0] ext_addr;
+    logic  [7:0] ext_din;
+    logic        ext_we;
+    logic  [7:0] mcu_data;
+} alpha8201_i_t;
+
+typedef struct packed {
+    logic  [7:0] ext_dout;
+    logic [12:0] mcu_addr;
+} alpha8201_o_t;
+
+// TMS5110 speech synthesizer (tms5110). ctl / pdc / data_bit come from the board's VSM / PROM controller; m0 / busy go
+// back to it. ce_sample = one 8 kHz output step
+typedef struct packed {
+    logic        reset;
+    logic        ce_sample;
+    logic  [3:0] ctl;
+    logic        pdc;
+    logic        data_bit;
+} tms5110_i_t;
+
+typedef struct packed {
+    logic        m0;
+    logic        busy;
+    logic        talk_status;
+    logic signed [15:0] sample;
+} tms5110_o_t;
+
 endpackage

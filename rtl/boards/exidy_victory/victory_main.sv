@@ -5,7 +5,7 @@
 //  64-entry 9-bit palette, collision IRQs. Same 336 x 280 raster at 5.6448 MHz as the 6502 boards.
 //  Copyright (C) 2026 Rodimus
 //
-//  Foreground planes live in RAM pool blocks 0 / 1 (exidy_board): R at 0x00000, G at 0x04000,
+//  Foreground planes live in RAM pool blocks 0 / 1 (exidy_dispatcher): R at 0x00000, G at 0x04000,
 //  B at 0x08000. Port A = microcode engine, port B = scan-out.
 //  The engine implements the board's command semantics; BUSY (C004.7) is a timer of the command's state count x 8 clocks
 //  of 11.289 MHz. The engine is faster than that; a CPU access to C000-C1FF (except the C004 status poll)

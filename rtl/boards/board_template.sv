@@ -3,7 +3,7 @@
 //  Copyright (C) 2026 Rodimus
 //
 //  Boards never instantiate a CPU, sound chip, ROM store or board RAM. They live ONCE in the dispatcher
-//  rtl/exidy_board.sv: main 6502 t65_0 (this board's cpu_* ports), sound 6502 t65_1, Z80 z80pa_0, dsnd_0, PIAs
+//  rtl/exidy_dispatcher.sv: main 6502 t65_0 (this board's cpu_* ports), sound 6502 t65_1, Z80 z80pa_0, dsnd_0, PIAs
 //  pia6821[1:0], pit8253_0, riot6532_0, ptm6840_0, mc3417_0, tms5220rsws_0 (chip_pool_pkg buses), the shared ROM
 //  blocks (rom_main, rom_spr, rom_cp0 / rom_cp1, rom_snd, rom_cvsd) and the six board RAM pool blocks
 //  (ram_pool_pkg: 0 = 32K, 1 = 16K, 2 / 3 = 8K, 4 = 2K, 5 = 1K; map in the dispatcher's "Shared RAM pool" section).

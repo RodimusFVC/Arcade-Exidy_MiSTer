@@ -13,7 +13,7 @@
 //    The two-column read-modify-write is two parallel BRAM accesses: video and colour RAM are split into
 //    even-column and odd-column banks.
 //
-//  ioctl: program ROM through exidy_board's rom_main (Z80 0000-7FFF).
+//  ioctl: program ROM through exidy_dispatcher's rom_main (Z80 0000-7FFF).
 //
 //============================================================================
 
@@ -28,7 +28,7 @@ module starfire_main
     output logic        cen_p,          // Z80 2.5 MHz, rising / falling half
     output logic        cen_n,
 
-    // Z80 (exidy_board's pooled T80pa)
+    // Z80 (exidy_dispatcher's pooled T80pa)
     input  logic [15:0] z_a,
     input  logic  [7:0] z_do,
     input  logic        z_mreq_n,
@@ -37,7 +37,7 @@ module starfire_main
     output logic  [7:0] z_di,
     output logic        z_nmi_n,
 
-    input  logic  [7:0] rom_d,          // rom_main, addressed by z_a[14:0] in exidy_board
+    input  logic  [7:0] rom_d,          // rom_main, addressed by z_a[14:0] in exidy_dispatcher
 
     // inputs (9800-9807)
     input  logic  [7:0] dsw,
@@ -183,7 +183,7 @@ logic       hs_odd = 1'b0;
 always_ff @(posedge clk) hs_odd <= hs_col[0];
 assign hs_dout = hs_odd ? vo_q : ve_q;
 
-// The four banks (vram_e, vram_o, cram_e, cram_o) are blocks 0-3 of the board's RAM pool (rtl/exidy_board.sv); same
+// The four banks (vram_e, vram_o, cram_e, cram_o) are blocks 0-3 of the board's RAM pool (rtl/exidy_dispatcher.sv); same
 // ports and timing as separate BRAMs.
 assign pr_i[0].a_addr = {3'd0, hs_on ? hs_ra : ve_a};
 assign pr_i[0].a_d    = hs_on ? hs_din : ve_d;

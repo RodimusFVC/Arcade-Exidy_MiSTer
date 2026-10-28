@@ -46,7 +46,7 @@ module exidy_main
     input  logic  [7:0] ioctl_dout,
     input  logic        ioctl_wr0,
 
-    // main 6502 (owned by exidy_board)
+    // main 6502 (owned by exidy_dispatcher)
     input  logic        cpu_ce,
     input  logic [15:0] cpu_a,
     input  logic  [7:0] cpu_do,
@@ -54,7 +54,7 @@ module exidy_main
     output logic  [7:0] cpu_di,
     output logic        cpu_irq_n,
 
-    input  logic  [7:0] rom_d,          // program ROM (exidy_board), addressed by cpu_a[14:0]
+    input  logic  [7:0] rom_d,          // program ROM (exidy_dispatcher), addressed by cpu_a[14:0]
     output logic [17:0] qrom_a,         // Fax question ROM: {bank, cpu_a[12:0]}
     input  logic  [7:0] qrom_d,
     output logic [10:0] spr_a,          // motion object EPROM 11D

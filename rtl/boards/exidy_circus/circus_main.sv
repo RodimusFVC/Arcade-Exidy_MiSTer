@@ -31,7 +31,7 @@ module circus_main
     input  logic        ce_pix,
     input  logic  [7:0] cfg,
 
-    // main 6502 (owned by exidy_board)
+    // main 6502 (owned by exidy_dispatcher)
     input  logic        cpu_ce,
     input  logic [15:0] cpu_a,
     input  logic  [7:0] cpu_do,
@@ -39,8 +39,8 @@ module circus_main
     output logic  [7:0] cpu_di,
     output logic        cpu_irq_n,
 
-    input  logic  [7:0] rom_d,          // program PROMs (exidy_board), 1000-1FFF / E000-FFFF = cpu_a[11:0]
-    output logic [10:0] spr_a,          // object PROM 14D (exidy_board image BRAM)
+    input  logic  [7:0] rom_d,          // program PROMs (exidy_dispatcher), 1000-1FFF / E000-FFFF = cpu_a[11:0]
+    output logic [10:0] spr_a,          // object PROM 14D (exidy_dispatcher image BRAM)
     input  logic  [7:0] spr_d,
 
     input  logic  [7:0] in0,            // A000 controls, active high

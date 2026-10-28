@@ -74,7 +74,7 @@ module exidy_sndbd #(
     output ram_pool_pkg::pram_i_t [5:0] pr_i,
     input  ram_pool_pkg::pram_o_t [5:0] pr_o,
 
-    // this board's chips are the dispatcher's shared pool (rtl/exidy_board.sv), driven here
+    // this board's chips are the dispatcher's shared pool (rtl/exidy_dispatcher.sv), driven here
     output chip_pool_pkg::pia6821_i_t [1:0] pia6821_i,      // [0] main-side PIA, [1] sound-side PIA
     input  chip_pool_pkg::pia6821_o_t [1:0] pia6821_o,
     output chip_pool_pkg::pit8253_i_t       pit8253_i,
