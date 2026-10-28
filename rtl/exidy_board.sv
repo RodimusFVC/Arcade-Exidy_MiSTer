@@ -631,9 +631,12 @@ always_comb
     else if (circus) ds_board = {24'd0, bx_q[0], c_latch};
     else             ds_board = 40'd0;
 
-// pool slot dsnd_0 (dsndlr type: gen-1, Circus family, Star Fire / Fire One, Car Polo)
-chip_pool_pkg::dsndlr_i_t dsnd_0_i;
-chip_pool_pkg::dsndlr_o_t dsnd_0_o;
+// pool slot dsnd_0 (gen-1, Circus family, Star Fire / Fire One, Car Polo)
+// DSNDMERGE-2026-10-27: original below (dsndlr folded into dsnd)
+// chip_pool_pkg::dsndlr_i_t dsnd_0_i;
+// chip_pool_pkg::dsndlr_o_t dsnd_0_o;
+chip_pool_pkg::dsnd_i_t dsnd_0_i;
+chip_pool_pkg::dsnd_o_t dsnd_0_o;
 assign dsnd_0_i.src = {ds_caps, vol_music, vol_sfx, ds_board};
 dsnd_engine dsnd_0
 (
