@@ -1,45 +1,29 @@
-// ============================================================================
-// ptm6840.sv — Motorola MC6840 programmable timer module, E-enable model
-//
-// Register map (RS2..RS0):           write                 read
-//   0  CR1 (CR2 b0=1) / CR3 (b0=0)                         0 (no-op)
-//   1  CR2                                                 status
-//   2/4/6  MSB buffer                                      counter MSB (latches LSB)
-//   3/5/7  timer latch = {MSB buf, data}                   LSB buffer
-// CRx b0: CR1 internal reset / CR2 register select / CR3 T3 /8 prescaler
-//     b1: 1 = E clock, 0 = external Cx     b2: 1 = dual 8-bit
-//     b3: compare mode (not implemented: counts, output low)
-//     b4: 1 = latch write does NOT initialise the counter     b5: single-shot
-//     b6: IRQ enable                       b7: output enable (O pin low when 0)
-// Continuous 16-bit: output toggles every N+1 clocks. Dual 8-bit: output high for
-// the last L+1 clocks of each (M+1)(L+1) period.
-// External clocks counted on the falling edge, sampled each E.
-// Reset (/RES): latches = counters = FFFF, CR1 = 01 (held in reset), outputs low.
-// Gates are tied low on the Exidy board; gate inputs are not modelled.
-// ============================================================================
+//  SPDX-License-Identifier: BSD-3-Clause
+//  Copyright (C) 2026 Rodimus
+//  MC6840 PTM, written from the Motorola datasheet.
 
 module ptm6840
 (
     input  logic       clk,
     input  logic       rst,
-    input  logic       ce,          // E enable
+    input  logic       ce,
     input  logic       cs,
     input  logic       rw,
     input  logic [2:0] rs,
     input  logic [7:0] din,
     output logic [7:0] dout,
-    input  logic [2:0] cx,          // external clock inputs C3..C1 (bit0 = C1)
-    output logic [2:0] o,           // O3..O1 pin levels
-    output logic       irq          // active high
+    input  logic [2:0] cx,
+    output logic [2:0] o,
+    output logic       irq
 );
 
 logic [7:0]  cr [0:2];
 logic [15:0] latch [0:2];
 logic [15:0] cnt [0:2];
-logic [2:0]  st;                    // internal output state
-logic [2:0]  fired;                 // single-shot finished
-logic [2:0]  flag;                  // status flags
-logic [2:0]  stat_rd;               // status read while flag set
+logic [2:0]  st;
+logic [2:0]  fired;
+logic [2:0]  flag;
+logic [2:0]  stat_rd;
 logic [7:0]  msb_buf, lsb_buf;
 logic [2:0]  cx_d;
 logic [2:0]  t3_pre;
@@ -48,7 +32,6 @@ wire wr_en = ce & cs & ~rw;
 wire rd_en = ce & cs &  rw;
 wire hold  = cr[0][0];
 
-// ---------------------------------------------------------------- clock ticks
 logic [2:0] ext_fall;
 logic [2:0] tick;
 always_comb begin
@@ -74,7 +57,6 @@ always_ff @(posedge clk) begin
             if (tick[2] & cr[2][0]) t3_pre <= t3_pre + 3'd1;
         end
 
-        // ---------------- counting
         if (hold) begin
             for (int i = 0; i < 3; i++) begin
                 cnt[i] <= latch[i];
@@ -87,16 +69,14 @@ always_ff @(posedge clk) begin
             for (int i = 0; i < 3; i++) begin
                 if ((i == 2) ? t3_tick : tick[i]) begin
                     if (!cr[i][2]) begin
-                        // 16-bit
                         if (cnt[i] == 16'h0000) begin
                             cnt[i] <= latch[i];
                             st[i]  <= ~st[i];
                             flag[i] <= 1'b1; stat_rd[i] <= 1'b0;
-                            if (cr[i][5] & st[i]) fired[i] <= 1'b1;   // single-shot: back low -> done
+                            if (cr[i][5] & st[i]) fired[i] <= 1'b1;
                         end else
                             cnt[i] <= cnt[i] - 16'd1;
                     end else begin
-                        // dual 8-bit
                         if (cnt[i][7:0] == 8'h00) begin
                             if (cnt[i][15:8] == 8'h00) begin
                                 cnt[i] <= latch[i];
@@ -115,7 +95,6 @@ always_ff @(posedge clk) begin
             end
         end
 
-        // ---------------- reads with side effects
         if (rd_en) begin
             case (rs)
                 3'd1: stat_rd <= stat_rd | flag;
@@ -130,7 +109,6 @@ always_ff @(posedge clk) begin
             endcase
         end
 
-        // ---------------- writes
         if (wr_en) begin
             case (rs)
                 3'd0: begin
@@ -151,7 +129,6 @@ always_ff @(posedge clk) begin
     end
 end
 
-// ---------------------------------------------------------------- outputs
 always_comb begin
     for (int i = 0; i < 3; i++)
         o[i] = cr[i][7] & st[i] & ~fired[i] & ~cr[i][3];

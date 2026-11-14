@@ -25,7 +25,7 @@
     <joystick>8-way</joystick>
     <special_controls></special_controls>
     <num_buttons>3</num_buttons>
-    <buttons names="Fire,Throttle Up,Throttle Down,Not Used,Coin,Start 1P,Start 2P,Pause,Not Used,Not Used,Not Used" default="A,B,X,Y,Select,Start,R,L"/>
+    <buttons names="Fire,Throttle Up,Throttle Down,-,Coin,Start 1P,Start 2P,Pause,-,-,-" default="A,B,X,Select,Start,R,L"/>
 
     <switches default="00">
         <dip name="Time" bits="0,1" ids="90 Sec,80 Sec,70 Sec,60 Sec"/>
@@ -36,7 +36,7 @@
         <dip name="Service Mode" bits="7" ids="Off,On"/>
     </switches>
 
-    <!-- Index 0: MAME regions, layout in rtl/exidy_board.sv -->
+    <!-- Index 0: ROM -->
     <rom index="0" md5="none" zip="starfirea.zip|starfire.zip">
         <part crc="6adcd7e7" name="starfire.1a"/>
         <part crc="835c70ea" name="starfire.2a"/>
@@ -53,7 +53,7 @@
         <part crc="9b713924" name="prom-2.8a"/>
     </rom>
 
-    <!-- Index 1: board variant, flags, board config, input map (see Arcade-Exidy.sv) -->
+    <!-- Index 1: Config -->
     <rom index="1">
         <part>
             08 04 00 00 F8 00 FF FF FF FF FF FF 80 00 80 80
@@ -68,7 +68,7 @@
             04 05 06 07 00 00 00
         </part>
     </rom>
-    <!-- Index 5: discrete sound program for rtl/sound/dsnd_engine.sv (tools/dsnd_boards.py) -->
+    <!-- Index 5: Sound program -->
     <rom index="5">
         <part>
             00 00 00 00 00 00 FF 01 01 00 00 00 00 00 00 0E
@@ -404,13 +404,14 @@
         </part>
     </rom>
 
-    <!-- Index 3: hiscore config (MAME hiscore.dat), index 4: saved scores -->
+    <!-- Index 3: Hiscore -->
     <rom index="3" md5="none">
         <part>
             00 28 70 03 00 FF 00 02 00 02 00 02 FF FF 04 00
             00 00 82 BA 00 AA 00 00
         </part>
     </rom>
+    <!-- Index 4: NVRAM -->
     <rom index="4"></rom>
     <nvram index="4" size="170"></nvram>
 

@@ -1,38 +1,28 @@
-// ============================================================================
-// mc3417.sv — Motorola MC3417 CVSD decoder (decode only), fixed point
-// Behaviour = MAME sound/hc55516.cpp mc3417_device::process_bit (3-bit
-// coincidence, constants for a 16 kHz bit clock), evaluated once per falling
-// edge of the bit clock:
-//   int  = (int +/- syl) * leak            (bit 0 -> up, bit 1 -> down)
-//   syl  = coincidence ? FMAX - (FMAX - syl) * charge : max(syl * decay, FMIN)
-// Output = integrator in Q16 ("MAME units" before SAMPLE_GAIN 10000/32768).
-// ============================================================================
+//  Based on MAME hc55516.cpp (Aaron Giles, Jonathan Gevaryahu, BSD-3-Clause)
 
 module mc3417
 (
     input  logic               clk,
     input  logic               rst,
-    input  logic               bclk,        // bit clock level (555)
-    input  logic               din,         // digital in (latched by the board)
-    output logic signed [23:0] integ        // Q16 signed
+    input  logic               bclk,
+    input  logic               din,
+    output logic signed [23:0] integ
 );
 
-// Q16 constants (16 kHz bit-rate time constants, as MAME)
-localparam logic signed [23:0] FMAX   = 24'sd71788;   // 1.0954
-localparam logic signed [23:0] FMIN   = 24'sd2726;    // 0.0416
-localparam logic        [16:0] LEAK   = 17'd61565;    // exp(-1/(0.001*16000))
-localparam logic        [16:0] CHARGE = 17'd64520;    // exp(-1/(0.004*16000))
+localparam logic signed [23:0] FMAX   = 24'sd71788;
+localparam logic signed [23:0] FMIN   = 24'sd2726;
+localparam logic        [16:0] LEAK   = 17'd61565;
+localparam logic        [16:0] CHARGE = 17'd64520;
 localparam logic        [16:0] DECAY  = 17'd64520;
 
 logic        bclk_d;
-logic [1:0]  sr;            // previous two bits
+logic [1:0]  sr;
 logic signed [23:0] syl;
 
 wire fall = bclk_d & ~bclk;
 wire [2:0] sr_n = {sr[1:0], din};
 wire coinc = (sr_n == 3'b000) | (sr_n == 3'b111);
 
-// integrator step uses the old syllabic value
 wire signed [24:0] integ_x = {integ[23], integ};
 wire signed [24:0] syl_x   = {syl[23], syl};
 wire signed [24:0] i_sum   = din ? (integ_x - syl_x) : (integ_x + syl_x);

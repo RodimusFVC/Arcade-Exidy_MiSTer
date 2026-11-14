@@ -1,40 +1,27 @@
 //============================================================================
 //
 //  Discrete sound engine: one small fixed-point processor that runs a per-game circuit program (MRA index 5,
-//  tools/dsnd.py) once per sample, so each discrete sound board costs a program, not logic.
-//  Ported from Arcade-SpaceInvaders_MiSTer rtl/dsnd_engine.sv. Exidy changes: 22.578 MHz clock (832 clocks per
-//  sample = 27.137 kHz), op 33 OUTR (right channel mix), out_r, sample strobe for box-averaged sources.
-//  MASTER (merged Exidy + Phoenix copies): TICK = clocks per sample (default 832 = Exidy 22.578 MHz / Space Invaders
-//  39.936 MHz; Phoenix instances with #(.TICK(917)) at 44 MHz). out_r / sample are optional (leave unconnected for mono).
+//  assembled by RodimusCoresMaster_MiSTer/tools/dsnd.py) once per sample, so each discrete sound board costs a
+//  program, not logic. TICK = clocks per sample (at least 832); out_r / sample are optional (unconnected for mono).
+//  How it works: README.md of this chip folder.
 //  Copyright (C) 2026 Rodimus
 //
-//  Redistribution and use in source and synthesized forms, with or without
-//  modification, are permitted provided that the following conditions are met:
-//  Redistributions of source code must retain the above copyright notice,
-//  this list of conditions and the following disclaimer. Redistributions in
-//  synthesized form must reproduce the above copyright notice, this list of
-//  conditions and the following disclaimer in the documentation and/or other
-//  materials provided with the distribution. Neither the name of the author
-//  nor the names of other contributors may be used to endorse or promote
-//  products derived from this software without specific prior written
-//  permission.
-//
-//  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-//  AND ANY EXPRESS OR IMPLIED WARRANTIES ARE DISCLAIMED. IN NO EVENT SHALL THE
-//  AUTHOR OR CONTRIBUTORS BE LIABLE FOR ANY DAMAGES ARISING IN ANY WAY OUT OF
-//  THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+//  SPDX-License-Identifier: BSD-3-Clause
+//  Own work; license terms in the LICENSE file of this chip folder.
 //
 //============================================================================
 
 // Instruction (64 bits, little endian in the MRA; up to 1024): [63:56] op, [55:48] a, [47:40] b, [31:0] imm. Values are Q24
 // (1.0 = 1 << 24), the accumulator and the 256-word state memory M are 32 bits and wrap. 2 clocks per instruction,
-// at most 410 instructions per sample (824 of the 832 clocks); the sample ends at END. Output = mix >> 9, saturated (1.0 = full scale). Bit-exact with verilator/snd/dsnd_model.h.
+// at most 410 instructions per sample (up to 824 clocks); the sample ends at END. Output = mix >> 9, saturated
+// (1.0 = full scale). Bit-exact with verify/dsnd_model.h.
 //   0 END              1 LD a: acc = M[a]          2 LDI: acc = imm            3 ADD a: acc += M[a]
 //   4 SUB a: acc -= M[a]  5 ADDI: acc += imm       6 MULI: acc = acc * imm >> 24   7 MUL a: acc = acc * M[a] >> 24
 //   8 ST a: M[a] = acc  9 STF a: if F           10 LDIF: if F acc = imm
 //  11 RC a: M[a] += (acc - M[a]) * imm >> 24, acc = M[a]   12 RCM a, b: the same with the coefficient M[b]
 //  13 CMP a: F = acc >= M[a]   14 CMPI: F = acc >= imm   15 MAXI   16 MINI
 //  17 BIT b: F = source bit (a[0] inverts)   18 NOT: F = !F   19 NOISE b: step LFSR b[1:0], F = its new bit
+//     (b[2] = SN76477 lock-up guard: the new bit is 1 while bits 28 and 4:0 are all 0)
 //  20 OUT: mix += acc   21 LDF a: if F acc = M[a]   22 SKF: if F skip imm   23 SKNF: if !F skip imm
 //  24 LDL b: acc = source byte << 16   25 ABS   26 FAND b: F &= bit   27 FOR b: F |= bit   28 STNF a: if !F
 //  29 LDLM b: acc = (source byte & imm[7:0]) << imm[12:8]   30 MACI a: acc += M[a] * imm >> 24
@@ -43,7 +30,7 @@
 //  32 RCP: acc = 1 / acc (normalise, linear seed, 3 Newton-Raphson steps in Q24; 0 -> 7FFFFFFF, saturated)
 // Budget units: 1 per instruction, EXP 4 (8 clocks), RCP 5 (10 clocks); a sample stops after the instruction that
 // reaches 410 units.
-// Sources (b[5:3]): 0-5 board sources (see tools/dsnd_boards.py), 6 / 7 Game Audio settings; b[2:0] = bit.
+// Sources (b[5:3]): 0-5 board sources (the core's tools/dsnd_boards.py), 6 / 7 Game Audio settings; b[2:0] = bit.
 
 module dsnd_engine #(parameter int TICK = 832)
 (
@@ -291,7 +278,8 @@ always_ff @(posedge clk) begin
             f   <= f_n;
             if (op == 8'd19) begin : noise
                 logic nb;
-                nb = lfsr[fb[1:0]][28] ^ lfsr[fb[1:0]][0];      // MAME SN76477 / discrete 31-bit noise taps
+                nb = lfsr[fb[1:0]][28] ^ lfsr[fb[1:0]][0];      // SN76477 / discrete 31-bit noise taps
+                if (fb[2] && lfsr[fb[1:0]][28] == 1'b0 && lfsr[fb[1:0]][4:0] == 5'd0) nb = 1'b1;   // SN76477 lock-up guard
                 lfsr[fb[1:0]] <= {nb, lfsr[fb[1:0]][30:1]};
                 f <= nb;
             end

@@ -25,7 +25,7 @@
     <joystick>8-way</joystick>
     <special_controls></special_controls>
     <num_buttons>1</num_buttons>
-    <buttons names="Fire,Not Used,Not Used,Not Used,Coin,Start 1P,Start 2P,Pause,Not Used,Not Used,Not Used" default="A,B,X,Y,Select,Start,R,L"/>
+    <buttons names="Fire,-,-,-,Coin,Start 1P,Start 2P,Pause,-,-,-" default="A,Select,Start,R,L"/>
 
     <switches default="38">
         <dip name="Bonus Life" bits="0,1" ids="20000,30000,40000,50000"/>
@@ -33,7 +33,7 @@
         <dip name="Lives" bits="5,6" ids="2,3,4,5"/>
     </switches>
 
-    <!-- Index 0: MAME regions, layout in rtl/exidy_board.sv -->
+    <!-- Index 0: ROM -->
     <rom index="0" md5="none" zip="venture5a.zip|venture.zip">
         <part crc="4c833f99" name="vel_13a-57e.a13"/>
         <part crc="8163cefc" name="vel_12a-5.a12"/>
@@ -56,7 +56,7 @@
         <part crc="e26f9053" name="hrl6d-1.d6"/>
     </rom>
 
-    <!-- Index 1: board variant, flags, board config, input map (see Arcade-Exidy.sv) -->
+    <!-- Index 1: Config -->
     <rom index="1">
         <part>
             00 04 00 0B FF B0 FF 80 FF FC FF FF 80 00 80 80
@@ -72,18 +72,18 @@
         </part>
     </rom>
 
-    <!-- Index 3: hiscore config (MAME hiscore.dat), index 4: saved scores -->
+    <!-- Index 3: Hiscore -->
     <rom index="3" md5="none">
         <part>
             00 EB 6E 00 00 FF 00 02 00 02 00 02 FF FF 04 00
             00 00 03 80 00 23 00 53
         </part>
     </rom>
+    <!-- Index 4: NVRAM -->
     <rom index="4"></rom>
     <nvram index="4" size="35"></nvram>
 
-    <!-- Index 6: MAME artwork, layout table (from default.lay) + PNGs from the artwork zip, as-is -->
-    <!-- OSD Artwork: View 1 = Upright Artwork -->
+    <!-- Index 6: Artwork -->
     <rom index="6" md5="none" zip="/mame-artwork/venture.zip">
         <part>
             41 57 01 00 01 00 00 01 00 01 00 00 00 00 00 00 70 03 62 03 B6 00 3A 01 00 02 80 01 00 1E 01 00

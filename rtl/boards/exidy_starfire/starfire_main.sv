@@ -1,34 +1,17 @@
-//============================================================================
-//
-//  Exidy Star Fire / Fire One logic board
 //  Copyright (C) 2026 Rodimus
-//
-//  From MAME starfire.cpp / starfire_v.cpp and the schematics:
-//    20 MHz master: Z80 = / 8 (2.5 MHz), pixel = / 4 (5 MHz). Here both come from the 22.578 MHz system clock
-//    through a fractional enable (exact average, pixels 4 or 5 clocks long).
-//    Bitmap: 32 columns x 256 lines of 8-pixel bytes (video RAM offset = column * 256 + line), a colour RAM of the
-//    same shape (5-bit colour per byte) and a 64-entry 3-3-3 palette loaded through colour RAM lines 0-31.
-//    CPU writes to C000-FFFF go through mirror / shifter / 16-function ALU into two adjacent columns at once;
-//    8000-9FFF is scratch RAM mapped into video RAM lines 0-31, with the control registers and inputs at 9xxx.
-//    The two-column read-modify-write is two parallel BRAM accesses: video and colour RAM are split into
-//    even-column and odd-column banks.
-//
-//  ioctl: program ROM through exidy_dispatcher's rom_main (Z80 0000-7FFF).
-//
-//============================================================================
+// Based on MAME starfire.cpp, starfire_v.cpp (Dan Boris, Olivier Galibert, Aaron Giles, Ryan Holtz, BSD-3-Clause)
 
 module starfire_main
 (
-    input  logic        clk,            // 22.578 MHz
+    input  logic        clk,
     input  logic        reset,
-    input  logic        pause,          // OSD pause: no NMIs pile up while the Z80 is frozen
+    input  logic        pause,
     input  logic        fireone,
 
-    output logic        ce_pix,         // 5 MHz average
-    output logic        cen_p,          // Z80 2.5 MHz, rising / falling half
+    output logic        ce_pix,
+    output logic        cen_p,
     output logic        cen_n,
 
-    // Z80 (exidy_dispatcher's pooled T80pa)
     input  logic [15:0] z_a,
     input  logic  [7:0] z_do,
     input  logic        z_mreq_n,
@@ -39,21 +22,19 @@ module starfire_main
 
     input  logic  [7:0] rom_d,          // rom_main, addressed by z_a[14:0] in exidy_dispatcher
 
-    // inputs (9800-9807)
     input  logic  [7:0] dsw,
-    input  logic  [7:0] sys_in,         // SYSTEM
-    input  logic  [7:0] p1_in,          // Fire One P1 / P2 buttons (bits 7:6)
+    input  logic  [7:0] sys_in,
+    input  logic  [7:0] p1_in,
     input  logic  [7:0] p2_in,
-    input  logic  [7:0] stick_x,        // Star Fire A/D
+    input  logic  [7:0] stick_x,
     input  logic  [7:0] stick_y,
     input  logic  [7:0] throttle,
-    input  logic  [5:0] pad1,           // Fire One paddles 0-63
+    input  logic  [5:0] pad1,
     input  logic  [5:0] pad2,
-    input  logic        tie_on_n,       // Star Fire audio status (input port 1 bits 3 / 4)
+    input  logic        tie_on_n,
     input  logic        laser_on_n,
-    input  logic        player_sel,     // Fire One control multiplexer
+    input  logic        player_sel,
 
-    // sound board strobes (data = z_do)
     output logic        snd_wr,
     output logic        snd_a0,
     output logic        music_wr,
@@ -62,31 +43,26 @@ module starfire_main
     output logic  [8:0] pix_x,
     output logic  [8:0] pix_y,
     output logic  [8:0] pix_rgb,        // {R3, G3, B3}
-    output logic  [5:0] pix_pen,        // palette index (CRT Flip frame buffer)
-    input  logic  [5:0] pal_ri,         // second palette read port (CRT Flip readout)
+    output logic  [5:0] pix_pen,
+    input  logic  [5:0] pal_ri,
     output logic  [8:0] pal_rq,
     output logic        vbl_raw,
 
-    // hiscore.v access to scratch RAM 8000-9FFF (only while it holds the CPU paused)
     input  logic [15:0] hs_a,
     input  logic  [7:0] hs_din,
     output logic  [7:0] hs_dout,
     input  logic        hs_we,
 
-    // board RAM pool (rtl/ram_pool_pkg.sv, dispatcher): blocks 0-3 = vram_e, vram_o, cram_e,
-    // cram_o (4K each). Port A = CPU / hiscore, port B = scan.
     output ram_pool_pkg::pram_i_t [5:0] pr_i,
     input  ram_pool_pkg::pram_o_t [5:0] pr_o
 );
 
-localparam [8:0] H_TOTAL = 9'd320;      // schematic: 256 + 64 (HR) = 0x140
-localparam [8:0] V_TOTAL = 9'd262;      // 262 lines; the schematic carry logic derives 260 #unverified
-localparam [8:0] V_START = 9'd32;       // visible lines 32-255
+localparam [8:0] H_TOTAL = 9'd320;
+localparam [8:0] V_TOTAL = 9'd262;
+localparam [8:0] V_START = 9'd32;
 
-/////////////////////////////  Clock enables  /////////////////////////////
-
-logic [14:0] acc = 15'd0;               // 5000 / 22578 of the clocks
-logic  [1:0] pause_dl = 2'd0;            // CPU resumes 2 clocks after pause: port A is back on its address
+logic [14:0] acc = 15'd0;
+logic  [1:0] pause_dl = 2'd0;
 always_ff @(posedge clk) pause_dl <= {pause_dl[0], pause};
 wire         pause_d = |pause_dl;
 wire  [15:0] acc_n = {1'b0, acc} + 16'd5000;
@@ -98,7 +74,7 @@ always_ff @(posedge clk) begin
     if (acc_n >= 16'd22578) begin
         acc    <= acc_n[14:0] - 15'd22578;
         ce_pix <= 1'b1;
-        // pause holds the phase too: the T80pa must always see CEN_p / CEN_n alternate, or it crashes on resume
+        // pause holds the phase: the T80pa must always see CEN_p / CEN_n alternate, or it crashes on resume
         if (!pause && !pause_d) begin
             cpu_ph <= ~cpu_ph;
             cen_p  <=  cpu_ph;
@@ -107,8 +83,6 @@ always_ff @(posedge clk) begin
     end
     else acc <= acc_n[14:0];
 end
-
-/////////////////////////////  Raster  /////////////////////////////
 
 logic [8:0] hcnt = 9'd0, vcnt = 9'd0;
 always_ff @(posedge clk) begin
@@ -122,7 +96,6 @@ always_ff @(posedge clk) begin
 end
 wire vis = (hcnt < 9'd256) && (vcnt >= V_START) && (vcnt < 9'd256);
 
-// NMI once per frame at the start of vblank (Star Fire's J6 jumper fitted)
 logic [5:0] nmi_cnt = 6'd0;
 always_ff @(posedge clk) begin
     if (ce_pix && hcnt == 9'd0 && vcnt == 9'd256 && !pause) nmi_cnt <= 6'd63;
@@ -131,40 +104,32 @@ end
 assign z_nmi_n = (nmi_cnt == 6'd0);
 assign vbl_raw = (vcnt >= 9'd256) || (vcnt < V_START);
 
-/////////////////////////////  Control registers  /////////////////////////////
-
-logic [7:0] vidctrl = 8'd0, vidctrl1 = 8'd0;    // 9000 shift / mirror, 9001 video control
-logic [4:0] color = 5'd0;                        // colour latch
-wire        cdrm  = vidctrl1[7];                 // colour RAM source = colour latch
-wire        trans = vidctrl1[6];                 // palette write enable
-wire        vwe   = vidctrl1[5];                 // video RAM write enable for lines 0-31 (PROT)
-wire        rsel  = vidctrl1[4];                 // ROLL: right-side mask select
+logic [7:0] vidctrl = 8'd0, vidctrl1 = 8'd0;
+logic [4:0] color = 5'd0;
+wire        cdrm  = vidctrl1[7];
+wire        trans = vidctrl1[6];
+wire        vwe   = vidctrl1[5];
+wire        rsel  = vidctrl1[4];
 wire  [3:0] aluop = ~vidctrl1[3:0];
-
-/////////////////////////////  CPU decode  /////////////////////////////
 
 wire mreq_rd = ~z_mreq_n & ~z_rd_n;
 wire mreq_wr = ~z_mreq_n & ~z_wr_n;
 logic wr_d = 1'b0, rd_d = 1'b0;
 always_ff @(posedge clk) begin wr_d <= mreq_wr; rd_d <= mreq_rd; end
-wire wr_go = mreq_wr & ~wr_d;           // one clock at the start of each write
+wire wr_go = mreq_wr & ~wr_d;
 wire rd_go = mreq_rd & ~rd_d;
 
 wire r_rom     = ~z_a[15];
-wire r_scratch = (z_a[15:13] == 3'b100);         // 8000-9FFF
-wire r_color   = (z_a[15:13] == 3'b101);         // A000-BFFF
-wire r_vram    = (z_a[15:14] == 2'b11);          // C000-FFFF
-wire r_input   = r_scratch & z_a[11];            // reads 9800-9FFF (A11)
+wire r_scratch = (z_a[15:13] == 3'b100);
+wire r_color   = (z_a[15:13] == 3'b101);
+wire r_vram    = (z_a[15:14] == 2'b11);
+wire r_input   = r_scratch & z_a[11];
 
-// column / line of the access: scratch RAM converts A[12:0] into lines 0-31
 wire [4:0] a_col = r_scratch ? {z_a[7:5], z_a[9:8]} : z_a[12:8];
 wire [7:0] a_y   = r_scratch ? {3'b000, z_a[4:0]}   : z_a[7:0];
-wire       a_low = (a_y[7:5] == 3'b000);         // lines 0-31 (palette / scratch / PROT)
-wire [4:0] a_col2 = a_col + 5'd1;                // second column of a C000-FFFF access
+wire       a_low = (a_y[7:5] == 3'b000);
+wire [4:0] a_col2 = a_col + 5'd1;
 
-/////////////////////////////  Video / colour RAM banks  /////////////////////////////
-
-// even-column and odd-column banks, address {column[4:1], line}
 logic [11:0] ve_a, vo_a, ce_a, co_a;
 logic  [7:0] ve_d, vo_d, ce_d, co_d;
 logic        ve_w, vo_w, ce_w, co_w;
@@ -172,35 +137,31 @@ logic  [7:0] ve_q, vo_q, ce_q, co_q;
 logic [11:0] scan_a;
 logic  [7:0] ve_s, vo_s, ce_s, co_s;
 
-// hiscore: scratch address -> bank / port A address as for the CPU; it owns port A only while the CPU is paused
-// and no CPU write is in flight (st 1 / 2 and ve_w / vo_w finish a CPU cycle); MRA PAUSEPAD covers the takeover
 wire [4:0]  hs_col = {hs_a[7:5], hs_a[9:8]};
 wire [11:0] hs_ra  = {hs_col[4:1], 3'b000, hs_a[4:0]};
-logic [1:0] st = 2'd0;                  // CPU access sequencer: 0 idle, 1 read banks, 2 write back
+logic [1:0] st = 2'd0;
 wire        hs_on  = pause && pause_dl[1] && (st == 2'd0 || st == 2'd3) && !ve_w && !vo_w;
 wire        hs_wr  = hs_on && hs_we && (hs_a[15:13] == 3'b100);
 logic       hs_odd = 1'b0;
 always_ff @(posedge clk) hs_odd <= hs_col[0];
 assign hs_dout = hs_odd ? vo_q : ve_q;
 
-// The four banks (vram_e, vram_o, cram_e, cram_o) are blocks 0-3 of the board's RAM pool (rtl/exidy_dispatcher.sv); same
-// ports and timing as separate BRAMs.
-assign pr_i[0].a_addr = {3'd0, hs_on ? hs_ra : ve_a};
+assign pr_i[0].a_addr = {4'd0, hs_on ? hs_ra : ve_a};
 assign pr_i[0].a_d    = hs_on ? hs_din : ve_d;
 assign pr_i[0].a_we   = hs_on ? hs_wr & ~hs_col[0] : ve_w;
-assign pr_i[1].a_addr = {3'd0, hs_on ? hs_ra : vo_a};
+assign pr_i[1].a_addr = {4'd0, hs_on ? hs_ra : vo_a};
 assign pr_i[1].a_d    = hs_on ? hs_din : vo_d;
 assign pr_i[1].a_we   = hs_on ? hs_wr & hs_col[0] : vo_w;
-assign pr_i[2].a_addr = {3'd0, ce_a};
+assign pr_i[2].a_addr = {4'd0, ce_a};
 assign pr_i[2].a_d    = ce_d;
 assign pr_i[2].a_we   = ce_w;
-assign pr_i[3].a_addr = {3'd0, co_a};
+assign pr_i[3].a_addr = {4'd0, co_a};
 assign pr_i[3].a_d    = co_d;
 assign pr_i[3].a_we   = co_w;
 genvar sb;
 generate
     for (sb = 0; sb < 4; sb++) begin : g_scan
-        assign pr_i[sb].b_addr = {3'd0, scan_a};
+        assign pr_i[sb].b_addr = {4'd0, scan_a};
         assign pr_i[sb].b_d    = 8'd0;
         assign pr_i[sb].b_we   = 1'b0;
     end
@@ -210,17 +171,14 @@ assign pr_i[5] = '0;
 assign {ve_q, vo_q, ce_q, co_q} = {pr_o[0].a_q, pr_o[1].a_q, pr_o[2].a_q, pr_o[3].a_q};
 assign {ve_s, vo_s, ce_s, co_s} = {pr_o[0].b_q, pr_o[1].b_q, pr_o[2].b_q, pr_o[3].b_q};
 
-/////////////////////////////  Shifter / mask (video RAM write / read)  /////////////////////////////
-
-wire        sel2 = z_a[13];                                  // E000-FFFF uses shift / mirror set 2
+wire        sel2 = z_a[13];
 wire  [2:0] sh   = sel2 ? vidctrl[3:1] : vidctrl[7:5];
 wire        lr   = sel2 ? vidctrl[0]   : vidctrl[4];
 wire  [7:0] dm   = lr ? {z_do[0], z_do[1], z_do[2], z_do[3], z_do[4], z_do[5], z_do[6], z_do[7]} : z_do;
 wire [15:0] ds_f = {dm, 8'd0} >> sh;
 wire [15:0] mk_f = 16'hFF00 >> sh;
-wire [15:0] mask = (a_col == 5'd31) ? (mk_f & (rsel ? 16'h00FF : 16'hFF00)) : mk_f;   // ROLL at column 31
+wire [15:0] mask = (a_col == 5'd31) ? (mk_f & (rsel ? 16'h00FF : 16'hFF00)) : mk_f;
 
-// first column = offset1, second = offset2 (column + 1)
 wire  [7:0] d1 = a_col[0] ? vo_q : ve_q;
 wire  [7:0] d2 = a_col[0] ? ve_q : vo_q;
 wire [15:0] d0f = {d1, d2};
@@ -249,12 +207,9 @@ always_comb begin
 end
 wire [15:0] dalu = (d0f & ~mask) | (fn & mask);
 
-// CPU read of C000-FFFF: masked pair rotated left by the shift
 wire  [7:0] rd_m  = (d1 & mask[15:8]) | (d2 & mask[7:0]);
 wire [15:0] rd_r2 = {rd_m, rd_m} << sh;
 wire  [7:0] rd_rot = rd_r2[15:8];
-
-/////////////////////////////  Colour RAM pseudo-palette (colour RAM write / read)  /////////////////////////////
 
 wire [4:0] cl_w = cdrm ? color : z_do[4:0];
 wire [4:0] cr_w = {cdrm ? color[4] : z_do[4], z_a[8], z_do[7:5]};
@@ -262,11 +217,6 @@ wire [5:0] pal_i = {z_a[9], a_y[4:0]};
 logic [8:0] pal [64];
 initial for (int i = 0; i < 64; i++) pal[i] = 9'd0;
 
-/////////////////////////////  CPU access sequencer  /////////////////////////////
-
-
-// Port A addresses follow the CPU address; a C000-FFFF access reads both columns, the colour palette region
-// (A000-BFFF lines 0-31) reads the even / odd pair of the same column pair.
 wire [3:0] colh  = a_col[4:1];
 wire [3:0] colh2 = a_col2[4:1];
 wire       cpair = r_color & a_low;
@@ -287,7 +237,6 @@ always_ff @(posedge clk) begin
         case (st)
             2'd0: if (wr_go) begin
                 if (r_scratch) begin
-                    // scratch RAM write (no ALU) + control registers at A12 = 1, A3 = 0
                     if (a_col[0]) begin vo_d <= z_do; vo_w <= 1'b1; end
                     else          begin ve_d <= z_do; ve_w <= 1'b1; end
                     if (z_a[12] && !z_a[3]) begin
@@ -313,15 +262,15 @@ always_ff @(posedge clk) begin
                         color <= cl_w;
                     end
                 end
-                else if (r_vram && !(a_low && !vwe)) st <= 2'd1;   // PROT: lines 0-31 need VWE
+                else if (r_vram && !(a_low && !vwe)) st <= 2'd1;
             end
-            else if (rd_go && cpair && trans) st <= 2'd2;            // colour reads in the palette region refresh it
+            else if (rd_go && cpair && trans) st <= 2'd2;
 
-            2'd1: begin                                             // banks hold both columns: ALU and write back
+            2'd1: begin
                 if (a_col[0]) begin vo_d <= dalu[15:8]; ve_d <= dalu[7:0]; end
                 else          begin ve_d <= dalu[15:8]; vo_d <= dalu[7:0]; end
                 ve_w <= 1'b1; vo_w <= 1'b1;
-                if (!sel2 && !cdrm) begin                           // colour follows the written columns
+                if (!sel2 && !cdrm) begin
                     if (a_col[0]) begin co_d <= {3'b000, color}; co_w <= |mask[15:8]; ce_d <= {3'b000, color}; ce_w <= |mask[7:0]; end
                     else          begin ce_d <= {3'b000, color}; ce_w <= |mask[15:8]; co_d <= {3'b000, color}; co_w <= |mask[7:0]; end
                 end
@@ -333,12 +282,10 @@ always_ff @(posedge clk) begin
                 st <= 2'd3;
             end
 
-            default: if (!mreq_wr && !mreq_rd) st <= 2'd0;          // wait for the bus cycle to end
+            default: if (!mreq_wr && !mreq_rd) st <= 2'd0;
         endcase
     end
 end
-
-/////////////////////////////  CPU read mux  /////////////////////////////
 
 logic [7:0] in_q;
 always_comb begin
@@ -348,7 +295,7 @@ always_comb begin
         4'd1: in_q = fireone ? sys_in : {sys_in[7:5], laser_on_n, tie_on_n, sys_in[2:0]};
         4'd2: if (fireone) begin
                   in_q = player_sel ? {p2_in[7:6], pad2} : {p1_in[7:6], pad1};
-                  in_q[5:0] = in_q[5:0] ^ {1'b0, in_q[5:1]};            // paddle is a 6-bit Gray code
+                  in_q[5:0] = in_q[5:0] ^ {1'b0, in_q[5:1]};
               end
         4'd5: if (!fireone) in_q = throttle;
         4'd6: if (!fireone) in_q = stick_x;
@@ -366,10 +313,6 @@ always_comb begin
     else if (r_vram)    z_di = rd_rot;
 end
 
-/////////////////////////////  Scan out  /////////////////////////////
-
-// fetch the next column's byte and colour two pixels ahead (the end-of-line fetch is column 0 of the next line),
-// latch it two clocks later (address register, then BRAM output), load it at the end of each 8-pixel group
 wire [4:0] next_col  = (hcnt == H_TOTAL - 9'd3) ? 5'd0 : hcnt[7:3] + 5'd1;
 wire [7:0] next_line = (hcnt == H_TOTAL - 9'd3) ? ((vcnt == V_TOTAL - 9'd1) ? 8'd0 : vcnt[7:0] + 8'd1) : vcnt[7:0];
 logic [4:0] fcol;

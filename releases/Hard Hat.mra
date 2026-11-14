@@ -25,7 +25,7 @@
     <joystick>4-way</joystick>
     <special_controls></special_controls>
     <num_buttons>1</num_buttons>
-    <buttons names="Fire,Not Used,Not Used,Not Used,Coin,Start 1P,Start 2P,Pause,Not Used,Not Used,Not Used" default="A,B,X,Y,Select,Start,R,L"/>
+    <buttons names="Fire,-,-,-,Coin,Start 1P,Start 2P,Pause,-,-,-" default="A,Select,Start,R,L"/>
 
     <switches default="5F">
         <dip name="Bonus Life" bits="0,1" ids="40000 and 80000,50000 and 100000,70000 and 140000,90000 and 180000" values="3,2,1,0"/>
@@ -33,7 +33,7 @@
         <dip name="Coinage" bits="2,4" ids="2C/1C,Coin A 2C/1C Coin B 1C/3C,1C/1C,Coin A 1C/1C Coin B 1C/4C,Coin A 1C/1C Coin B 1C/5C,1C/2C,1 Coin/3 Credits 2C/7C,1C/4C" values="6,0,7,2,3,5,1,4"/>
     </switches>
 
-    <!-- Index 0: MAME regions, layout in rtl/exidy_board.sv -->
+    <!-- Index 0: ROM -->
     <rom index="0" md5="none" zip="hardhat.zip">
         <part repeat="0x2000">00</part>
         <part crc="7623deea" name="hhl-2.11a"/>
@@ -50,7 +50,7 @@
         <part crc="dbcdf353" name="hhl-1.11d"/>
     </rom>
 
-    <!-- Index 1: board variant, flags, board config, input map (see Arcade-Exidy.sv) -->
+    <!-- Index 1: Config -->
     <rom index="1">
         <part>
             02 05 00 2B FF DE FF 80 FF FC FF FF 80 00 80 80
@@ -66,13 +66,14 @@
         </part>
     </rom>
 
-    <!-- Index 3: hiscore config (MAME hiscore.dat), index 4: saved scores -->
+    <!-- Index 3: Hiscore -->
     <rom index="3" md5="none">
         <part>
             03 74 4C 00 00 FF 00 02 00 02 00 02 FF FF 04 00
             00 00 03 60 00 23 00 11
         </part>
     </rom>
+    <!-- Index 4: NVRAM -->
     <rom index="4"></rom>
     <nvram index="4" size="35"></nvram>
 

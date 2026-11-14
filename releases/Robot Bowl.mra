@@ -25,7 +25,7 @@
     <joystick>8-way</joystick>
     <special_controls></special_controls>
     <num_buttons>4</num_buttons>
-    <buttons names="Fire,Button 2,Hook Right,Hook Left,Coin,Start 1P,Start 2P,Pause,Not Used,Not Used,Not Used" default="A,B,X,Y,Select,Start,R,L"/>
+    <buttons names="Fire,Button 2,Hook Right,Hook Left,Coin,Start 1P,Start 2P,Pause,-,-,-" default="A,B,X,Y,Select,Start,R,L"/>
 
     <switches default="03">
         <dip name="Beer Frame" bits="0" ids="Off,On"/>
@@ -33,7 +33,7 @@
         <dip name="Bowl Timer" bits="3,4" ids="3 seconds,5 seconds,7 seconds,9 seconds"/>
     </switches>
 
-    <!-- Index 0: MAME regions, layout in rtl/exidy_board.sv -->
+    <!-- Index 0: ROM -->
     <rom index="0" md5="none" zip="robotbwl.zip">
         <part crc="df387a0b" name="4020.1a"/>
         <part crc="c948274d" name="4021.2a"/>
@@ -54,7 +54,7 @@
         <part crc="5022c4ea" name="5001.5d"/>
     </rom>
 
-    <!-- Index 1: board variant, flags, board config, input map (see Arcade-Exidy.sv) -->
+    <!-- Index 1: Config -->
     <rom index="1">
         <part>
             07 04 02 33 00 0C FF FF FF FF FF FF 80 00 80 80
@@ -69,7 +69,7 @@
             04 05 06 07 00 00 00
         </part>
     </rom>
-    <!-- Index 5: discrete sound program for rtl/sound/dsnd_engine.sv (tools/dsnd_boards.py) -->
+    <!-- Index 5: Sound program -->
     <rom index="5">
         <part>
             00 00 00 00 00 00 FF 01 01 00 00 00 00 00 00 0E

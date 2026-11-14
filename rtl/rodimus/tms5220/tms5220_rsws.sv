@@ -1,19 +1,4 @@
-// ============================================================================
-// tms5220_rsws.sv — /RS /WS pin front end for tms5220.sv (instant data_w/status_r core).
-// Models MAME tms5220.cpp "true timing" mode (rsq_w / wsq_w / data_w / status_r / readyq_r):
-//  - pins are processed in MAME order on any change: /RS first, then /WS.
-//  - /RS or /WS falling (other line high): /READY goes inactive, one shared timer is (re)armed:
-//      read  13 us; write 16 TMS clocks.
-//  - timer expiry acts on the *current* pin state: write (RS=1 WS=0): FIFO full in Speak External
-//    -> re-arm 16 clocks, else data_write(latch) and /READY active; read (RS=0 WS=1): read latch =
-//    status_read(true) (clears /INT); both high / both low: /READY active only.
-//  - both high: read latch = FF. Bus output = read latch while RS=0 WS=1, else FF (MAME status_r).
-//  - after the read is serviced the latch follows status while /RS stays low (MAME refreshes it on
-//    every FIFO/status update; status only changes at those updates).
-// Not modelled: a command held in the command register while talking (needs VSM Speak; MAME
-// update_fifo_status_and_ints resume path) — tms5220.sv executes every command at once.
-// All timing is exact-rational from CLK_HZ; pause freezes timers and the sample clock.
-// ============================================================================
+//  Based on MAME tms5220.cpp (Frank Palazzolo, Aaron Giles, Jonathan Gevaryahu, Raphael Nabet, Couriersud, Michael Zapf, BSD-3-Clause)
 
 module tms5220_rsws #(
     parameter int CLK_HZ = 22578000,
@@ -25,14 +10,13 @@ module tms5220_rsws #(
     input  logic        pause,
     input  logic        rs_n,
     input  logic        ws_n,
-    input  logic  [7:0] d_in,           // data bus as driven by the host (MAME data_w value)
-    output logic  [7:0] d_out,          // data bus as driven by the TMS (FF = not driving)
+    input  logic  [7:0] d_in,
+    output logic  [7:0] d_out,
     output logic        ready_n,
     output logic        int_n,
     output logic signed [15:0] audio
 );
 
-// ---------------------------------------------------------------- sample clock: TMS_HZ / 80
 localparam logic [31:0] SMP_MOD = CLK_HZ * 80;
 logic [31:0] smp_acc;
 logic        ce_smp;
@@ -48,10 +32,9 @@ always_ff @(posedge clk) begin
     end
 end
 
-// ---------------------------------------------------------------- core
 logic       c_wr, c_rd;
 logic [7:0] c_din, c_dout;
-logic       c_ready_n;          // instant-mode READY: low = FIFO full in Speak External (core io_ready is always 1)
+logic       c_ready_n;
 
 tms5220 tms
 (
@@ -61,8 +44,6 @@ tms5220 tms
     .audio(audio), .audio_valid()
 );
 
-// ---------------------------------------------------------------- pin state machine
-// timer: accumulate INC per clk, expire at THR (exact): write = 16 TMS clocks, read = 13 us
 localparam int          W_INC_I = TMS_HZ;
 localparam int          W_THR_I = 16 * CLK_HZ;
 localparam int          R_THR_I = 13 * CLK_HZ;
@@ -71,7 +52,7 @@ localparam logic [29:0] W_THR   = W_THR_I[29:0];
 localparam logic [29:0] R_INC   = 30'd1000000;
 localparam logic [29:0] R_THR   = R_THR_I[29:0];
 
-logic [1:0]  rsws;              // MAME m_rs_ws: {RS, WS}
+logic [1:0]  rsws;
 logic        io_ready, tmr_on, tmr_rd, rd_valid;
 logic [29:0] tmr_acc;
 logic [7:0]  rlatch;
@@ -83,7 +64,6 @@ always_ff @(posedge clk) begin : pin_fsm
     logic [1:0] s;
     logic       arm, arm_rd, ff;
     if (reset) begin
-        // MAME device_start: rs_ws = 3, io_ready = 1 (device_reset leaves both alone)
         rsws <= 2'b11; io_ready <= 1'b1; tmr_on <= 1'b0; tmr_rd <= 1'b0; tmr_acc <= '0;
         rlatch <= 8'hFF; rd_valid <= 1'b0; c_wr <= 1'b0; c_rd <= 1'b0; c_din <= 8'h00;
     end else begin
@@ -91,13 +71,11 @@ always_ff @(posedge clk) begin : pin_fsm
         c_rd <= 1'b0;
         s = rsws; arm = 1'b0; arm_rd = 1'b0; ff = 1'b0;
 
-        // rsq_w
         if (rs_n != s[1]) begin
             s[1] = rs_n;
             if (s == 2'b11)              ff = 1'b1;
             else if (s != 2'b00 && !rs_n) begin arm = 1'b1; arm_rd = 1'b1; end
         end
-        // wsq_w
         if (ws_n != s[0]) begin
             s[0] = ws_n;
             if (s == 2'b11)              ff = 1'b1;
@@ -115,14 +93,14 @@ always_ff @(posedge clk) begin : pin_fsm
             if (tmr_acc + (tmr_rd ? R_INC : W_INC) >= (tmr_rd ? R_THR : W_THR)) begin
                 tmr_on <= 1'b0;
                 case (s)
-                    2'b10: begin                                    // write
-                        if (c_ready_n) begin                        // FIFO full + Speak External: retry
+                    2'b10: begin
+                        if (c_ready_n) begin
                             tmr_on <= 1'b1; tmr_rd <= 1'b0; tmr_acc <= '0;
                         end else begin
                             c_wr <= 1'b1; c_din <= d_in; io_ready <= 1'b1;
                         end
                     end
-                    2'b01: begin                                    // read: status_read(true)
+                    2'b01: begin
                         rlatch <= c_dout; c_rd <= 1'b1; io_ready <= 1'b1; rd_valid <= 1'b1;
                         ff = 1'b0;
                     end
@@ -133,7 +111,7 @@ always_ff @(posedge clk) begin : pin_fsm
         end
 
         if (ff)                            rlatch <= 8'hFF;
-        else if (rd_valid && s == 2'b01)   rlatch <= c_dout;        // /RS held low: follows status
+        else if (rd_valid && s == 2'b01)   rlatch <= c_dout;
     end
 end
 

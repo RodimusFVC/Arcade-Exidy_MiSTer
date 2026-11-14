@@ -25,17 +25,18 @@ set_global_assignment -name SYSTEMVERILOG_FILE rtl/boards/exidy_sound/exidy_sndb
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/boards/exidy_sound/exidy_snd_mixer.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/boards/exidy_gen1_sound/exidy_gen1snd.sv
 
-set_global_assignment -name SYSTEMVERILOG_FILE rtl/sound/pia6821.sv
-set_global_assignment -name SYSTEMVERILOG_FILE rtl/sound/riot6532.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/rodimus/pia6821/pia6821.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/rodimus/riot6532/riot6532.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/sound/pit8253.sv
-set_global_assignment -name SYSTEMVERILOG_FILE rtl/sound/tms5220.sv
-set_global_assignment -name SYSTEMVERILOG_FILE rtl/sound/tms5220_rsws.sv
-set_global_assignment -name SYSTEMVERILOG_FILE rtl/sound/dsnd_engine.sv
-set_global_assignment -name SYSTEMVERILOG_FILE rtl/sound/ptm6840.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/rodimus/tms5220/tms5220.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/rodimus/tms5220/tms5220_rsws.sv
+set_global_assignment -name SEARCH_PATH rtl/rodimus/tms5220
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/rodimus/dsnd_engine/dsnd_engine.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/rodimus/ptm6840/ptm6840.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/sound/mc3417.sv
 
-set_global_assignment -name QIP_FILE rtl/cpu/T65/t65.qip
-set_global_assignment -name QIP_FILE rtl/cpu/T80/T80.qip
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/rodimus/t65sv/t65sv_all.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/rodimus/t80sv/t80sv_all.sv
 
 set_global_assignment -name VERILOG_FILE rtl/mister_custom/pause.v
 set_global_assignment -name VERILOG_FILE rtl/mister_custom/hiscore.v

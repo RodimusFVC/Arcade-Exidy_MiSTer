@@ -25,7 +25,7 @@
     <joystick>8-way</joystick>
     <special_controls></special_controls>
     <num_buttons>2</num_buttons>
-    <buttons names="Fire,Button 2,Not Used,Not Used,Coin,Start 1P,Start 2P,Pause,Not Used,Not Used,Not Used" default="A,B,X,Y,Select,Start,R,L"/>
+    <buttons names="Fire,Button 2,-,-,Coin,Start 1P,Start 2P,Pause,-,-,-" default="A,B,Select,Start,R,L"/>
 
     <switches default="87">
         <dip name="Lives" bits="0,1" ids="3,5,7,9"/>
@@ -33,7 +33,7 @@
         <dip name="High Score" bits="4" ids="Award Credit,No Award" values="1,0"/>
     </switches>
 
-    <!-- Index 0: MAME regions, layout in rtl/exidy_board.sv -->
+    <!-- Index 0: ROM -->
     <rom index="0" md5="none" zip="ripcord.zip">
         <part crc="56b8dc06" name="9027.1a"/>
         <part crc="a8a78a30" name="9028.2a"/>
@@ -52,7 +52,7 @@
         <part crc="9f86ed5b" name="9023.1c"/>
     </rom>
 
-    <!-- Index 1: board variant, flags, board config, input map (see Arcade-Exidy.sv) -->
+    <!-- Index 1: Config -->
     <rom index="1">
         <part>
             07 64 01 49 00 87 FF FF FF FF FF FF 80 00 80 80
@@ -67,7 +67,7 @@
             04 05 06 07 00 00 00
         </part>
     </rom>
-    <!-- Index 5: discrete sound program for rtl/sound/dsnd_engine.sv (tools/dsnd_boards.py) -->
+    <!-- Index 5: Sound program -->
     <rom index="5">
         <part>
             00 00 00 00 00 00 FF 01 01 00 00 00 00 00 00 0E
@@ -299,13 +299,14 @@
         </part>
     </rom>
 
-    <!-- Index 3: hiscore config (MAME hiscore.dat), index 4: saved scores -->
+    <!-- Index 3: Hiscore -->
     <rom index="3" md5="none">
         <part>
             00 11 3A 00 00 FF 00 02 00 02 00 02 FF FF 04 00
             00 00 00 36 00 02 00 00
         </part>
     </rom>
+    <!-- Index 4: NVRAM -->
     <rom index="4"></rom>
     <nvram index="4" size="2"></nvram>
 

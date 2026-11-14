@@ -1,25 +1,12 @@
-//============================================================================
-//
-//  Exidy Car Polo main board (MAME carpolo.cpp / carpolo_m.cpp / carpolo_v.cpp), on the pooled 6502.
+//  Based on MAME carpolo.cpp, carpolo_m.cpp, carpolo_v.cpp (Zsolt Vasvari, BSD-3-Clause)
 //  Copyright (C) 2026 Rodimus
-//
-//  Video: score-area / field fill, border, four cars + ball + special char (16x16, 1 bpp, sprite ROM =
-//  the pooled rom_spr, code remap PROM), two 2x-zoomed goals, eight alpha rows; fixed draw order and
-//  colour-PROM pens. Same 336 x 280 raster at 5.6448 MHz, 240 pixels wide.
-//  Collisions: at vblank a sequential checker runs the checks in a fixed order (car-car,
-//  car-ball, car-goal, ball-screen, car-border) with the original hit selection (last sprite column with a hit,
-//  first row in it) and coordinate formula, then raises the 74148 lines together.
-//  Inputs: 74148 priority encoder, coin / steering 7474s and the pedal 74153 sampled once per frame
-//  (once per frame). No sound on this board.
-//
-//============================================================================
 
 module carpolo_main
 (
-    input  logic        clk,            // 22.578 MHz
+    input  logic        clk,
     input  logic        reset,
-    input  logic        ce_pix,         // 5.6448 MHz (board ph == 3)
-    input  logic        cpu_ce,         // 940.75 kHz (11.289 MHz / 12), paused by the board
+    input  logic        ce_pix,
+    input  logic        cpu_ce,
 
     input  logic [24:0] ioctl_addr,
     input  logic  [7:0] ioctl_dout,
@@ -30,15 +17,15 @@ module carpolo_main
     input  logic        cpu_rw,
     output logic  [7:0] cpu_di,
     output logic        cpu_irq_n,
-    input  logic  [7:0] rom_d,          // F000-FFFF from rom_main
+    input  logic  [7:0] rom_d,
 
-    output logic [10:0] spr_a,          // pooled sprite ROM (gfx1 at 0x14000)
+    output logic [10:0] spr_a,
     input  logic  [7:0] spr_d,
 
-    input  logic  [7:0] in0,            // IN0 coins 1-4 (active high)
-    input  logic  [7:0] dsw,            // IN1 game-time DIP
+    input  logic  [7:0] in0,
+    input  logic  [7:0] dsw,
     input  logic  [7:0] in2,            // IN2 forward / reverse (bits 7-4 = P1-P4, active low)
-    input  logic  [7:0] pedals,         // PEDALS: {P4 B2, P4 B1, ... P1 B2, P1 B1}
+    input  logic  [7:0] pedals,
     input  logic  [7:0] dial1,
     input  logic  [7:0] dial2,
     input  logic  [7:0] dial3,
@@ -46,19 +33,16 @@ module carpolo_main
 
     output logic  [8:0] pix_x,
     output logic  [8:0] pix_y,
-    output logic  [4:0] pix_idx,        // colour PROM index (CRT Flip frame buffer)
+    output logic  [4:0] pix_idx,
     output logic [23:0] pix_rgb,
-    input  logic  [4:0] pal_ri,         // second colour read port (CRT Flip readout)
+    input  logic  [4:0] pal_ri,
     output logic [23:0] pal_rq,
     output logic        vbl_raw,
-    output logic [31:0] snd,            // sound board inputs (dsnd sources 0-3, tools/dsnd_boards.py "carpolo")
+    output logic [31:0] snd,
 
-    // the two PIAs are the dispatcher's pool slots pia6821[0] / [1] (shared with the sound board)
     output chip_pool_pkg::pia6821_i_t [1:0] pia6821_i,
     input  chip_pool_pkg::pia6821_o_t [1:0] pia6821_o,
 
-    // goal / alphanumeric ROMs in the dispatcher's shared ROM blocks (read ports; the goal ROM is
-    // read on both ports: A = sprite-goal check, B = playfield goals)
     output logic  [7:0] goal_rom_sa,
     input  logic  [7:0] goal_rom_sq,
     output logic  [7:0] goal_rom_ca,
@@ -66,12 +50,9 @@ module carpolo_main
     output logic  [8:0] alpha_rom_a,
     input  logic  [7:0] alpha_rom_q,
 
-    // board RAM pool (rtl/ram_pool_pkg.sv, dispatcher): 4 work RAM, 5 alpha RAM
     output ram_pool_pkg::pram_i_t [5:0] pr_i,
     input  ram_pool_pkg::pram_o_t [5:0] pr_o
 );
-
-/////////////////////////////  Raster  /////////////////////////////
 
 localparam [8:0] H_TOTAL = 9'd336, V_TOTAL = 9'd280;
 logic [8:0] hcnt = 9'd0, vcnt = 9'd0;
@@ -85,21 +66,17 @@ always_ff @(posedge clk) begin
     end
 end
 assign vbl_raw = vcnt[8];
-wire vbl_tick = ce_pix && hcnt == 9'd0 && vcnt == 9'd256;    // vblank start
+wire vbl_tick = ce_pix && hcnt == 9'd0 && vcnt == 9'd256;
 
-/////////////////////////////  Small ROMs / PROMs (ioctl)  /////////////////////////////
-
-// gfx2 goal 0x15800 (256), gfx3 alpha 0x16000 (512), user1 remap 0x16800 (32), colour PROM 0x14800 (32)
 logic [7:0] remap [0:31];
 logic [7:0] cprom [0:31];
 always_ff @(posedge clk) begin
-    if (ioctl_wr0 && ioctl_addr[24:5] == 20'h00B40) remap[ioctl_addr[4:0]] <= ioctl_dout;   // 0x16800
-    if (ioctl_wr0 && ioctl_addr[24:5] == 20'h00A40) cprom[ioctl_addr[4:0]] <= ioctl_dout;   // 0x14800
+    if (ioctl_wr0 && ioctl_addr[24:5] == 20'h00B40) remap[ioctl_addr[4:0]] <= ioctl_dout;
+    if (ioctl_wr0 && ioctl_addr[24:5] == 20'h00A40) cprom[ioctl_addr[4:0]] <= ioctl_dout;
 end
 
 logic [7:0] goal_sa, goal_ca, goal_sq, goal_cq, ach_q;
 logic [8:0] ach_a;
-// both ROMs are dispatcher ROM blocks (shared with the Circus-family PROMs)
 assign goal_rom_sa = goal_sa;
 assign goal_sq     = goal_rom_sq;
 assign goal_rom_ca = goal_ca;
@@ -107,7 +84,6 @@ assign goal_cq     = goal_rom_cq;
 assign alpha_rom_a = ach_a;
 assign ach_q       = alpha_rom_q;
 
-// colour PROM -> palette levels (R / G 3 bits, B 2 bits through resistor ladders)
 function automatic [7:0] lvl3(input [2:0] v);
     case (v)
         3'd0: lvl3 = 8'h00; 3'd1: lvl3 = 8'h1C; 3'd2: lvl3 = 8'h38; 3'd3: lvl3 = 8'h58;
@@ -124,63 +100,56 @@ function automatic [23:0] crgb(input [7:0] p);
 endfunction
 assign pal_rq = crgb(cprom[pal_ri]);
 
-// goal PROM byte -> pen (ROMREGION_INVERT; planes = the low nibble)
 function automatic [3:0] goal_pen(input [7:0] b);
     goal_pen = ~b[3:0];
 endfunction
-// goal row r (0-31) -> PROM row base (rows 0-7 at 192, 8-23 at 0, 24-31 at 128; 8 bytes per row)
 function automatic [7:0] goal_base(input [4:0] r);
     if      (r < 5'd8)  goal_base = 8'd192 + {2'd0, r[2:0], 3'd0};
     else if (r < 5'd24) goal_base = {r - 5'd8, 3'd0};
     else                goal_base = 8'd128 + {2'd0, r[2:0], 3'd0};
 endfunction
 
-/////////////////////////////  CPU bus  /////////////////////////////
-
 wire wr = cpu_ce & ~cpu_rw;
-wire s_ram   = cpu_a[15:9] == 7'd0;                     // 0000-01FF
-wire s_alpha = cpu_a[15:8] == 8'h30;                    // 3000-30FF (write only)
-wire s_spr   = cpu_a[15:4] == 12'h400;                  // 4000-400F (write only)
-wire s_pia0  = cpu_a[15:10] == 6'b010101;               // 5400-5403
-wire s_pia1  = cpu_a[15:10] == 6'b010110;               // 5800-5803
-wire s_coll  = cpu_a[15:3] == 13'h1400;                 // A000-A007
-wire s_clr   = cpu_a[15:3] == 13'h1600;                 // B000-B006
+wire s_ram   = cpu_a[15:9] == 7'd0;
+wire s_alpha = cpu_a[15:8] == 8'h30;
+wire s_spr   = cpu_a[15:4] == 12'h400;
+wire s_pia0  = cpu_a[15:10] == 6'b010101;
+wire s_pia1  = cpu_a[15:10] == 6'b010110;
+wire s_coll  = cpu_a[15:3] == 13'h1400;
+wire s_clr   = cpu_a[15:3] == 13'h1600;
 wire s_cause = cpu_a == 16'hC000;
 wire s_rom   = cpu_a[15:12] == 4'hF;
 
 logic [7:0] ram_q, alpha_q;
 logic [7:0] alpha_sa;
-// work / alpha RAM = pool blocks 4 / 5
 assign pr_i[0] = '0;
 assign pr_i[1] = '0;
 assign pr_i[2] = '0;
 assign pr_i[3] = '0;
-assign pr_i[4].a_addr = {6'd0, cpu_a[8:0]};
+assign pr_i[4].a_addr = {7'd0, cpu_a[8:0]};
 assign pr_i[4].a_d    = cpu_do;
 assign pr_i[4].a_we   = wr & s_ram;
-assign pr_i[4].b_addr = 15'd0;
+assign pr_i[4].b_addr = 16'd0;
 assign pr_i[4].b_d    = 8'h00;
 assign pr_i[4].b_we   = 1'b0;
-assign pr_i[5].a_addr = {7'd0, cpu_a[7:0]};
+assign pr_i[5].a_addr = {8'd0, cpu_a[7:0]};
 assign pr_i[5].a_d    = cpu_do;
 assign pr_i[5].a_we   = wr & s_alpha;
-assign pr_i[5].b_addr = {7'd0, alpha_sa};
+assign pr_i[5].b_addr = {8'd0, alpha_sa};
 assign pr_i[5].b_d    = 8'h00;
 assign pr_i[5].b_we   = 1'b0;
 assign ram_q   = pr_o[4].a_q;
 assign alpha_q = pr_o[5].b_q;
 
-logic [7:0] sr [0:15];                                  // sprite RAM
+logic [7:0] sr [0:15];
 always_ff @(posedge clk) if (wr && s_spr) sr[cpu_a[3:0]] <= cpu_do;
 
-// ---- PIAs ----
 logic [7:0] pia0_q, pia1_q, p0_pa_o, p0_pa_oe, p0_pb_o, p0_pb_oe;
 logic       p0_ca2, p0_ca2_oe, p0_cb2, p0_cb2_oe, p1_ca2, p1_ca2_oe, p1_cb2, p1_cb2_oe;
 logic       za, zb;
-logic [3:0] dir_q = 4'd0, mov_q = 4'd0;                 // index 0 = P1 .. 3 = P4
+logic [3:0] dir_q = 4'd0, mov_q = 4'd0;
 logic [7:0] p1_pb_o, p1_pb_oe;
 
-// pool slots pia6821[0] / [1] (dispatcher)
 assign pia6821_i[0].rst   = reset;
 assign pia6821_i[0].ce    = cpu_ce;
 assign pia6821_i[0].cs    = s_pia0;
@@ -188,6 +157,7 @@ assign pia6821_i[0].rw    = cpu_rw;
 assign pia6821_i[0].rs    = cpu_a[1:0];
 assign pia6821_i[0].din   = cpu_do;
 assign pia6821_i[0].pa_i  = 8'h00;
+assign pia6821_i[0].pa_pins = 1'b0;
 assign pia6821_i[0].ca1   = 1'b0;
 assign pia6821_i[0].ca2_i = 1'b1;
 assign pia6821_i[0].pb_i  = {2'b00, za, zb, 4'h0};
@@ -205,6 +175,7 @@ assign pia6821_i[1].rw    = cpu_rw;
 assign pia6821_i[1].rs    = cpu_a[1:0];
 assign pia6821_i[1].din   = cpu_do;
 assign pia6821_i[1].pa_i  = {in2[7:4], dir_q[0], dir_q[1], dir_q[2], dir_q[3]};
+assign pia6821_i[1].pa_pins = 1'b0;
 assign pia6821_i[1].ca1   = 1'b0;
 assign pia6821_i[1].ca2_i = 1'b1;
 assign pia6821_i[1].pb_i  = {mov_q[0], mov_q[1], mov_q[2], mov_q[3], 4'h0};
@@ -215,15 +186,12 @@ assign p1_ca2   = pia6821_o[1].ca2_o;  assign p1_ca2_oe = pia6821_o[1].ca2_oe;
 assign p1_pb_o  = pia6821_o[1].pb_o;   assign p1_pb_oe  = pia6821_o[1].pb_oe;
 assign p1_cb2   = pia6821_o[1].cb2_o;  assign p1_cb2_oe = pia6821_o[1].cb2_oe;
 
-// 7474 clears (active low), from PIA outputs (inactive while the pin is an input)
 wire [3:0] coin_clr_n  = {p1_cb2_oe ? p1_cb2 : 1'b1, p1_ca2_oe ? p1_ca2 : 1'b1,
-                          p0_cb2_oe ? p0_cb2 : 1'b1, p0_ca2_oe ? p0_ca2 : 1'b1};   // coin 4..1
+                          p0_cb2_oe ? p0_cb2 : 1'b1, p0_ca2_oe ? p0_ca2 : 1'b1};
 wire       steer_clr_n = p0_pa_oe[3] ? p0_pa_o[3] : 1'b1;
 
-/////////////////////////////  Per-frame inputs  /////////////////////////////
-
 logic [3:0]  coin_q = 4'd0, coin_last = 4'd0;
-logic [31:0] dial_last = 32'd0;                          // {P4, P3, P2, P1}
+logic [31:0] dial_last = 32'd0;
 logic [3:0]  dir_d = 4'd0, bit0_last = 4'd0;
 logic [7:0]  ped = 8'd0;
 wire  [31:0] dial_v = {dial4, dial3, dial2, dial1};
@@ -256,18 +224,12 @@ always_ff @(posedge clk) begin
     end
 end
 
-// 74153: I0..I3 a = B1 | B2 of P1..P4, b = B2; select = PIA0 PB7:PB6
 wire [1:0] psel = {p0_pb_oe[7] ? p0_pb_o[7] : 1'b0, p0_pb_oe[6] ? p0_pb_o[6] : 1'b0};
 assign za = ped[{psel, 1'b0}] | ped[{psel, 1'b1}];
 assign zb = ped[{psel, 1'b1}];
 
-/////////////////////////////  Sound board inputs (sheets M, N)  /////////////////////////////
-
-// PIA pins read high while they are inputs
 wire [7:0] p0_pa = p0_pa_o | ~p0_pa_oe, p0_pb = p0_pb_o | ~p0_pb_oe, p1_pb = p1_pb_o | ~p1_pb_oe;
 
-// speed out: 74173 1J/1M/1L/1N, D = PIA1 PB3-PB1, clocked by the PB0 strobe rising, enabled by the decode of the
-// pedal select lines PB7/PB6 (player = pedal mux index #unverified)
 logic [2:0] spd [4] = '{3'd7, 3'd7, 3'd7, 3'd7};
 logic       strobe_q = 1'b1;
 always_ff @(posedge clk) begin
@@ -275,58 +237,47 @@ always_ff @(posedge clk) begin
     if (p0_pb[0] && !strobe_q) spd[psel] <= p0_pb[3:1];
 end
 
-// crash pulse extenders: 74161 2M/2N/.. /CLR = PIA1 PA6/PA4/PA2/PA1, clocked by TLCA (vertical count bits 0-3
-// carry, one tick per 16 lines); CRASH = ~RCO: high while the bit is low and for 15 TLCA ticks after
 logic [3:0] crash_cnt [4] = '{4'hF, 4'hF, 4'hF, 4'hF};
-wire  [3:0] crash_n = {p0_pa[1], p0_pa[2], p0_pa[4], p0_pa[6]};                   // P4..P1
+wire  [3:0] crash_n = {p0_pa[1], p0_pa[2], p0_pa[4], p0_pa[6]};
 wire        tlca    = ce_pix && hcnt == 9'd0 && vcnt[3:0] == 4'hF;
 always_ff @(posedge clk)
     for (int p = 0; p < 4; p++)
         if (!crash_n[p])                          crash_cnt[p] <= 4'd0;
         else if (tlca && crash_cnt[p] != 4'hF)    crash_cnt[p] <= crash_cnt[p] + 4'd1;
 
-// 0: {PA7 ball hit, PA5 score (both idle high, pulsed low), 0, 0, CRASH P4..P1}; 1: {0, speed P2, speed P1};
-// 2: {0, speed P4, speed P3}; 3: {0, ACTIVE P4..P1} (PIA2 PB0..PB3 = P4..P1)
 assign snd = {4'd0, p1_pb[0], p1_pb[1], p1_pb[2], p1_pb[3],
               2'd0, spd[3], spd[2], 2'd0, spd[1], spd[0],
               p0_pa[7], p0_pa[5], 2'd0,
               crash_cnt[3] != 4'hF, crash_cnt[2] != 4'hF, crash_cnt[1] != 4'hF, crash_cnt[0] != 4'hF};
-
-/////////////////////////////  Interrupt system (74148)  /////////////////////////////
 
 logic       ln3 = 1'b0, ln2 = 1'b0, ln1 = 1'b0, ln0 = 1'b0;
 logic [7:0] ext = 8'h00;
 logic [7:0] c_ball_screen = 8'd0, c_car_ball_x = 8'd0, c_car_ball_y = 8'd0, c_car_car = 8'd0;
 logic [7:0] c_car_goal = 8'd0, c_car_ball = 8'd0, c_car_border = 8'd0;
 
-wire [7:0] lines = {coin_q[0], coin_q[1], coin_q[2], coin_q[3], ln3, ln2, ln1, ln0};   // 74148 inputs 7..0
+wire [7:0] lines = {coin_q[0], coin_q[1], coin_q[2], coin_q[3], ln3, ln2, ln1, ln0};
 logic [2:0] enc;
 always_comb begin
-    enc = 3'd7;                                          // outputs (active low) of the highest active input
+    enc = 3'd7;
     for (int i = 0; i < 8; i++) if (lines[i]) enc = 3'd7 - 3'(i);
 end
 assign cpu_irq_n = ~|lines;
 wire [7:0] cause = {4'd0, enc, 1'b0} | ext;
 
-/////////////////////////////  Collision checker  /////////////////////////////
-
-// jobs: 0-5 car-car pairs, 6-9 car-ball, 10-17 car-goal (car1 L, car1 R, ...), 18 ball-left goal,
-// 19 ball-right goal, 20 ball-border, 21-24 car-border; car-car / car-ball / car-goal / car-border stop at
-// the first hit, the ball checks all run (later causes overwrite earlier ones)
-logic [7:0]  sv [0:15];                                  // sprite RAM latched at vblank
+logic [7:0]  sv [0:15];
 typedef enum logic [2:0] {K_IDLE, K_JOB, K_ROW, K_FETCH, K_GFETCH, K_EVAL, K_NEXT, K_APPLY} kstate_t;
 kstate_t     ks = K_IDLE;
 logic [4:0]  job;
 logic [2:0]  ja, jb;
-logic [1:0]  jkind;                                      // 0 sprite-sprite, 1 sprite-goal, 2 border
+logic [1:0]  jkind;
 logic        jright, jpost;
 logic [4:0]  row;
 logic [3:0]  fstep;
 logic        fsel;
 logic [3:0]  fcode, frow;
-logic [15:0] frow_q, r1, r2;                             // MSB = column 0
+logic [15:0] frow_q, r1, r2;
 logic [7:0]  gb [0:7];
-logic signed [5:0] bk;                                   // best column (-1 = none)
+logic signed [5:0] bk;
 logic [4:0]  bj;
 logic [1:0]  btype;
 logic        done_cc, done_cb, done_cg, done_cbd;
@@ -335,7 +286,7 @@ logic [7:0]  r_cc_v, r_cb_v, r_cbx, r_cby, r_cg_v, r_bs_v, r_bd_v;
 logic [10:0] k_spr_a;
 wire         k_busy = (ks != K_IDLE);
 
-function automatic [2:0] job_a(input [4:0] j);           // sprite 1: 0-3 cars, 4 ball
+function automatic [2:0] job_a(input [4:0] j);
     case (j)
         5'd0, 5'd1, 5'd2:                    job_a = 3'd0;
         5'd3, 5'd4:                          job_a = 3'd1;
@@ -344,7 +295,7 @@ function automatic [2:0] job_a(input [4:0] j);           // sprite 1: 0-3 cars, 
         5'd7, 5'd12, 5'd13, 5'd22:           job_a = 3'd1;
         5'd8, 5'd14, 5'd15, 5'd23:           job_a = 3'd2;
         5'd9, 5'd16, 5'd17, 5'd24:           job_a = 3'd3;
-        default:                             job_a = 3'd4;  // 18-20 ball
+        default:                             job_a = 3'd4;
     endcase
 endfunction
 function automatic [2:0] job_b(input [4:0] j);
@@ -363,7 +314,6 @@ function automatic [3:0] code_of(input [2:0] s, input [7:0] c, input [7:0] d, in
     endcase
 endfunction
 
-// job geometry (integer coordinates: 240 - position)
 wire [7:0] rm_a = remap[{(ja == 3'd4), code_of(ja, sv[12], sv[13], sv[14])}];
 wire [7:0] rm_b = remap[{(jb == 3'd4), code_of(jb, sv[12], sv[13], sv[14])}];
 wire signed [9:0] x1 = 10'sd240 - $signed({2'b00, sv[{ja, 1'b0}]});
@@ -373,23 +323,21 @@ wire signed [9:0] y2 = (jkind == 2'd0) ? 10'sd240 - $signed({2'b00, sv[{jb, 1'b1
 wire in_range = (jkind == 2'd0) ? ((x1 - x2 < 10'sd16) && (x2 - x1 < 10'sd16) && (y1 - y2 < 10'sd16) && (y2 - y1 < 10'sd16)) :
                 (jkind == 2'd1) ? ((y1 + 10'sd16 > 10'sd112) && (y1 < 10'sd176) && (x1 + 10'sd16 > x2) && (x1 < x2 + 10'sd16)) :
                 1'b1;
-// normalized bitmap offsets (normalized)
 wire signed [9:0] nx1 = (x1 > x2) ? x1 - x2 : 10'sd0;
 wire signed [9:0] nx2 = (x2 > x1) ? x2 - x1 : 10'sd0;
 wire signed [9:0] ny1 = (y1 > y2) ? y1 - y2 : 10'sd0;
 wire signed [9:0] ny2 = (y2 > y1) ? y2 - y1 : 10'sd0;
-wire signed [9:0] by  = ny1 + $signed({5'd0, row}) - ny2;   // row in sprite 2 / goal bitmap
-wire       [4:0]  grow = by[5:1];                           // goal row (zoom 2x)
+wire signed [9:0] by  = ny1 + $signed({5'd0, row}) - ny2;
+wire       [4:0]  grow = by[5:1];
 
-// evaluate one sprite-1 row: last column with a hit
 logic signed [5:0] ev_k;
 logic [1:0]        ev_t;
 logic [15:0]       ev_h;
 logic [31:0]       ev_tt;
-logic signed [9:0] c2x [0:15];                           // column k of sprite 1 in sprite 2 / goal bitmap x
+logic signed [9:0] c2x [0:15];
 logic [2:0]        gcol [0:15];
 logic [7:0]        bxx [0:15];
-wire  [7:0]        byy = y1[7:0] + {3'd0, row};          // border check: 8-bit coordinates
+wire  [7:0]        byy = y1[7:0] + {3'd0, row};
 always_comb begin
     for (int k = 0; k < 16; k++) begin
         c2x[k]  = nx1 + 10'(k) - nx2;
@@ -425,7 +373,7 @@ always_comb begin
     for (int k = 0; k < 16; k++) if (ev_h[k]) begin ev_k = 6'(k); ev_t = ev_tt[k*2 +: 2]; end
 end
 
-wire [9:0] cb_x = 10'(nx1 + nx1) + 10'(bk);              // col_x = (x1 + x) & 15
+wire [9:0] cb_x = 10'(nx1 + nx1) + 10'(bk);
 wire [9:0] cb_y = 10'(ny1 + ny1) + {5'd0, bj};
 
 always_ff @(posedge clk) begin
@@ -433,7 +381,6 @@ always_ff @(posedge clk) begin
         ks <= K_IDLE; ln3 <= 1'b0; ln2 <= 1'b0; ln1 <= 1'b0; ln0 <= 1'b0; ext <= 8'h00;
     end
     else begin
-        // CPU clears (B000-B006)
         if (wr && s_clr) case (cpu_a[2:0])
             3'd0:             ln3 <= 1'b0;
             3'd1, 3'd4, 3'd5: ln0 <= 1'b0;
@@ -476,7 +423,7 @@ always_ff @(posedge clk) begin
                 end
             end
 
-            K_FETCH: begin                               // 4 reads (2-clock latency) -> sprite row
+            K_FETCH: begin
                 fstep <= fstep + 4'd1;
                 case (fstep)
                     4'd0: k_spr_a <= {1'b0, 2'd3, fcode, frow};
@@ -503,7 +450,7 @@ always_ff @(posedge clk) begin
                 endcase
             end
 
-            K_GFETCH: begin                              // the 8 goal bytes of goal row `grow`
+            K_GFETCH: begin
                 fstep <= fstep + 4'd1;
                 if (fstep < 4'd8) goal_ca <= goal_base(grow) + {5'd0, fstep[2:0]};
                 if (fstep >= 4'd2) gb[3'(fstep - 4'd2)] <= goal_cq;
@@ -543,8 +490,8 @@ always_ff @(posedge clk) begin
                 ks  <= K_JOB;
             end
 
-            K_APPLY: begin                               // raise all lines at once, in the original write order
-                ln0 <= 1'b1; ext <= 8'h00;               // timer
+            K_APPLY: begin
+                ln0 <= 1'b1; ext <= 8'h00;
                 if (r_cc) begin ln2 <= 1'b1; c_car_car <= r_cc_v; end
                 if (r_cb) begin ln0 <= 1'b1; ext <= 8'h40; c_car_ball <= r_cb_v; c_car_ball_x <= r_cbx; c_car_ball_y <= r_cby; end
                 if (r_cg) begin ln1 <= 1'b1; c_car_goal <= r_cg_v; end
@@ -558,9 +505,6 @@ always_ff @(posedge clk) begin
     end
 end
 
-/////////////////////////////  Scan-out  /////////////////////////////
-
-// sprites 0-3 cars 1-4, 4 ball, 5 special char: rows for the next line fetched in hblank (from H 240)
 logic [15:0] srow [0:5], srow_n [0:5];
 logic [7:0]  sxp [0:5], sxp_n [0:5];
 logic [2:0]  ls, lstep;
@@ -578,7 +522,6 @@ function automatic [3:0] sl_code(input [2:0] s, input [7:0] c, input [7:0] d, in
         3'd4: sl_code = e[3:0]; default: sl_code = e[7:4];
     endcase
 endfunction
-// sprite RAM index of a sprite's x byte: cars 0, 2, 4, 6 (car 1 .. car 4), ball 8, special 10
 wire [3:0] lpos = (ls == 3'd0) ? 4'd0 : (ls == 3'd1) ? 4'd2 : (ls == 3'd2) ? 4'd4 : (ls == 3'd3) ? 4'd6 :
                   (ls == 3'd4) ? 4'd8 : 4'd10;
 wire [7:0] lrm    = remap[{(ls >= 3'd4), sl_code(ls, sr[12], sr[13], sr[14])}];
@@ -612,7 +555,6 @@ always_ff @(posedge clk) begin
                 end
             endcase
         end
-        // goal row for the next line (both goals use the same bytes; the right one is mirrored)
         if (gstep != 4'd15) begin
             gstep <= gstep + 4'd1;
             if (gstep < 4'd8) goal_sa <= goal_base(sgrow) + {5'd0, gstep[2:0]};
@@ -625,8 +567,7 @@ always_ff @(posedge clk) begin
 end
 assign spr_a = k_busy ? k_spr_a : l_spr_a;
 
-// alpha: 8 text lines shown at character rows 0, 1, 26, 27, 12, 13, 6, 7
-function automatic [3:0] alpha_line(input [4:0] r);      // {valid, line}
+function automatic [3:0] alpha_line(input [4:0] r);
     case (r)
         5'd0:  alpha_line = 4'b1000; 5'd1:  alpha_line = 4'b1001;
         5'd26: alpha_line = 4'b1010; 5'd27: alpha_line = 4'b1011;
@@ -635,7 +576,7 @@ function automatic [3:0] alpha_line(input [4:0] r);      // {valid, line}
         default: alpha_line = 4'b0000;
     endcase
 endfunction
-wire [8:0] t_h   = hcnt + 9'd9;                          // next 8-pixel group (see victory_main)
+wire [8:0] t_h   = hcnt + 9'd9;
 wire       t_nxt = t_h >= 9'd320;
 wire [8:0] v_nxt = (vcnt == V_TOTAL - 9'd1) ? 9'd0 : vcnt + 9'd1;
 wire [7:0] t_y   = t_nxt ? v_nxt[7:0] : vcnt[7:0];
@@ -658,25 +599,24 @@ always_ff @(posedge clk) begin
     endcase
 end
 
-// pixel: draw order: later layers win
 wire [7:0] px = hcnt[7:0], py = vcnt[7:0];
-logic [5:0] sp;                                          // sprite hits: 0-3 cars 1-4, 4 ball, 5 special
+logic [5:0] sp;
 always_comb for (int s = 0; s < 6; s++) sp[s] = ((8'(px - sxp[s])) < 8'd16) && srow[s][4'd15 - 4'(px - sxp[s])];
 wire [3:0] gpl = (px >= 8'd24  && px < 8'd40)  ? goal_pen(goal_row[3'((px - 8'd24) >> 1)]) : 4'd0;
 wire [3:0] gpr = (px >= 8'd200 && px < 8'd216) ? goal_pen(goal_row[3'd7 - 3'((px - 8'd200) >> 1)]) : 4'd0;
 logic [4:0] cidx;
 always_comb begin
-    cidx = (py < 8'd16) ? 5'd0 : 5'd1;                                                    // score area / field
-    if (sp[0]) cidx = 5'd2;                                                               // car 1
-    if (py == 8'd16 || py == 8'd255 || ((px == 8'd0 || px == 8'd239) && py >= 8'd16)) cidx = 5'd3;   // border
-    if (sp[3]) cidx = 5'd4;                                                               // car 4
-    if (sp[2]) cidx = 5'd5;                                                               // car 3
-    if (sp[1]) cidx = 5'd6;                                                               // car 2
-    if (sp[4]) cidx = 5'd7;                                                               // ball
-    if (gpl != 4'd0) cidx = (gpl == 4'd8) ? 5'd9  : (gpl == 4'd2 || gpl == 4'd6) ? 5'd8 : 5'd0;   // left goal
-    if (gpr != 4'd0) cidx = (gpr == 4'd8) ? 5'd10 : (gpr == 4'd2 || gpr == 4'd6) ? 5'd8 : 5'd0;   // right goal
-    if (sp[5]) cidx = 5'd11;                                                              // special char
-    if (a_sr[7]) cidx = 5'd12 + {3'd0, a_c};                                              // alpha
+    cidx = (py < 8'd16) ? 5'd0 : 5'd1;
+    if (sp[0]) cidx = 5'd2;
+    if (py == 8'd16 || py == 8'd255 || ((px == 8'd0 || px == 8'd239) && py >= 8'd16)) cidx = 5'd3;
+    if (sp[3]) cidx = 5'd4;
+    if (sp[2]) cidx = 5'd5;
+    if (sp[1]) cidx = 5'd6;
+    if (sp[4]) cidx = 5'd7;
+    if (gpl != 4'd0) cidx = (gpl == 4'd8) ? 5'd9  : (gpl == 4'd2 || gpl == 4'd6) ? 5'd8 : 5'd0;
+    if (gpr != 4'd0) cidx = (gpr == 4'd8) ? 5'd10 : (gpr == 4'd2 || gpr == 4'd6) ? 5'd8 : 5'd0;
+    if (sp[5]) cidx = 5'd11;
+    if (a_sr[7]) cidx = 5'd12 + {3'd0, a_c};
 end
 
 wire vis = (hcnt < 9'd240) && (vcnt < 9'd256);
@@ -691,8 +631,6 @@ always_ff @(posedge clk) begin
     end
 end
 
-/////////////////////////////  CPU read mux  /////////////////////////////
-
 always_comb begin
     cpu_di = 8'hFF;
     if      (s_ram)  cpu_di = ram_q;
@@ -706,7 +644,7 @@ always_comb begin
         3'd4: cpu_di = c_car_border;
         3'd5: cpu_di = c_car_ball;
         3'd6: cpu_di = c_car_goal;
-        default: cpu_di = {dsw[7:2], 2'b00};             // IN1: bits 1-0 = counter low bits (0)
+        default: cpu_di = {dsw[7:2], 2'b00};
     endcase
     else if (s_cause) cpu_di = cause;
     else if (s_rom)   cpu_di = rom_d;

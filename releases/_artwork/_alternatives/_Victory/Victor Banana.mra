@@ -25,14 +25,14 @@
     <joystick>8-way</joystick>
     <special_controls></special_controls>
     <num_buttons>4</num_buttons>
-    <buttons names="Thrust,Fire,Shields,Doomsday,Coin,Start 1P,Start 2P,Pause,Not Used,Not Used,Not Used" default="A,B,X,Y,Select,Start,R,L"/>
+    <buttons names="Thrust,Fire,Shields,Doomsday,Coin,Start 1P,Start 2P,Pause,-,-,-" default="A,B,X,Y,Select,Start,R,L"/>
 
     <switches default="F0">
         <dip name="????" bits="0,2" ids="0,1,2,3,4,5,6,7"/>
         <dip name="Refresh" bits="3" ids="60 Hz,50 Hz"/>
     </switches>
 
-    <!-- Index 0: MAME regions, layout in rtl/exidy_board.sv -->
+    <!-- Index 0: ROM -->
     <rom index="0" md5="none" zip="victorba.zip|victory.zip">
         <part crc="dd788e93" name="j2.rom"/>
         <part crc="f47bf046" name="k2.rom"/>
@@ -63,7 +63,7 @@
         <part crc="03b89d8a" name="l1.rom"/>
     </rom>
 
-    <!-- Index 1: board variant, flags, board config, input map (see Arcade-Exidy.sv) -->
+    <!-- Index 1: Config -->
     <rom index="1">
         <part>
             0A 04 00 00 FF 78 FF FF FF FF FF FF 80 00 80 80
@@ -79,12 +79,11 @@
         </part>
     </rom>
 
-    <!-- Index 4: battery-backed CMOS RAM -->
+    <!-- Index 4: NVRAM -->
     <rom index="4"></rom>
     <nvram index="4" size="2048"></nvram>
 
-    <!-- Index 6: MAME artwork, layout table (from default.lay) + PNGs from the artwork zip, as-is -->
-    <!-- OSD Artwork: View 1 = Upright Artwork -->
+    <!-- Index 6: Artwork -->
     <rom index="6" md5="none" zip="/mame-artwork/victory.zip">
         <part>
             41 57 01 00 01 00 00 01 00 01 00 00 00 00 00 00 DC 02 A8 02 6C 00 5E 00 00 02 80 01 00 5D 01 00

@@ -42,12 +42,12 @@ wire        ioctl_upload_req;
 wire  [7:0] ioctl_din;
 wire        ioctl_wr;
 wire  [7:0] ioctl_index;
-wire        ddr_ioctl_wait;     // ddr_rom: index-0 byte being mirrored to DDR3
-wire [26:0] ioctl_addr27;                     // hps_io's full address: the artwork download can pass 32 MB
-wire [24:0] ioctl_addr = ioctl_addr27[24:0];  // every other ioctl user
+wire        ddr_ioctl_wait;
+wire [26:0] ioctl_addr27;
+wire [24:0] ioctl_addr = ioctl_addr27[24:0];
 wire  [7:0] ioctl_dout;
 wire [15:0] joystick_0, joystick_1, joystick_2, joystick_3;
-wire [15:0] joystick_r_analog_0, joystick_r_analog_1;   // right analog sticks: [15:8] Y, [7:0] X, signed
+wire [15:0] joystick_r_analog_0, joystick_r_analog_1;
 wire  [8:0] spinner_0, spinner_1, spinner_2, spinner_3;
 wire  [7:0] paddle_0, paddle_1;
 wire [15:0] joystick_l_analog_0, joystick_l_analog_1;
@@ -74,8 +74,8 @@ assign HDMI_BOB_DEINT = 0;
 
 wire signed [15:0] audio, audio_r;
 assign AUDIO_L = pause_cpu ? 16'd0 : audio;
-assign AUDIO_R = pause_cpu ? 16'd0 : audio_r;     // Fire One is stereo; other boards drive both sides
-assign AUDIO_S = 1;   // signed
+assign AUDIO_R = pause_cpu ? 16'd0 : audio_r;
+assign AUDIO_S = 1;
 assign AUDIO_MIX = 0;
 
 assign LED_DISK  = 0;
@@ -83,42 +83,25 @@ assign LED_POWER = 0;
 assign LED_USER  = ioctl_download;
 assign BUTTONS = 0;
 
-///////////////////////////////////////////////////
-
-// MRA index 1:
-//   byte 0      board variant (see rtl/exidy_dispatcher.sv)
-//   byte 1      flags: [0] 4-way joystick, [2] coins are 2-frame pulses, [4] vertical, [5] paddle reversed,
-//               [6] paddle game (shows the Paddle OSD page), [7] vertical is ROT90
-//   byte 2      board config 2: gen-1 map options (see rtl/boards/exidy6502/exidy_main.sv)
-//   byte 3      board config (see rtl/boards/exidy6502/exidy_main.sv)
-//   bytes 4-11  idle level of every bit of the 8 ports (board order: IN0, DSW, IN2, INTSOURCE, IN3, COIN, IN4, -)
-//   bytes 12-19 per port: DIP switch byte that supplies it (bit 7 set = none, use the idle byte)
-//   bytes 20-83 input map, one byte per port bit (bit 0 first): control id, 0 = none; a pressed control inverts its bit
-//   bytes 84-147 per port bit: which bit of its DIP switch byte supplies it (MiSTer DIP fields must be contiguous;
-//               Exidy Coinage is DSW bits 3, 4, 7)
-//   bytes 148-150 colour latches R, G, B at reset (gen-1 boards: colour DIP shunts)
-// Only DIP ports go in the MRA switch bytes: Main_MiSTer builds the default as int shifts, so a byte >= 0x80 at
-// position 3 sign-extends over bytes 4-7, and bytes 4+ are shifted by 32+ (mra_loader.cpp: binary[i] << (i * 8))
 reg [7:0] game_var    = 8'd0;
 reg [7:0] game_flags  = 8'h04;
 reg [7:0] game_cfg2   = 8'd0;
 reg [7:0] col_init[3] = '{8'd0, 8'd0, 8'd0};
 reg [7:0] game_flags2 = 8'h0B;
-wire      game_cp     = (game_var == 8'd11);            // Car Polo (fast D-pad dial)
-wire      game_sf     = (game_var == 8'd8);             // Star Fire 1 / 2 (flight stick)
+wire      game_cp     = (game_var == 8'd11);
+wire      game_sf     = (game_var == 8'd8);
 reg [5:0] in_map[64];
 reg [7:0] port_idle[8] = '{8'hFF,8'hFF,8'hFF,8'hFF,8'hFF,8'h00,8'hFF,8'hFF};
 reg [7:0] port_dip[8]  = '{8'h80,8'h80,8'h80,8'h80,8'h80,8'h80,8'h80,8'h80};
-wire [7:0] map_idx8  = ioctl_addr[7:0] - 8'd20;    // bytes 20-83  -> 0-63
-wire [7:0] perm_idx8 = ioctl_addr[7:0] - 8'd84;    // bytes 84-147 -> 0-63
+wire [7:0] map_idx8  = ioctl_addr[7:0] - 8'd20;
+wire [7:0] perm_idx8 = ioctl_addr[7:0] - 8'd84;
 wire [5:0] map_idx   = map_idx8[5:0];
 wire [5:0] perm_idx  = perm_idx8[5:0];
-wire [2:0] idle_idx  = ioctl_addr[2:0] - 3'd4;     // bytes 4-11  -> 0-7
-wire [2:0] dip_idx   = ioctl_addr[2:0] - 3'd4;     // bytes 12-19 -> 0-7
+wire [2:0] idle_idx  = ioctl_addr[2:0] - 3'd4;
+wire [2:0] dip_idx   = ioctl_addr[2:0] - 3'd4;
 reg  [2:0] dip_bit[64];
 initial for (int i = 0; i < 64; i++) dip_bit[i] = i % 8;
 
-// discrete sound engine: the MRA carries a program (index 5, after index 1) -> the engine replaces the board's sound
 reg ds_on = 1'b0;
 always @(posedge CLK_SYS) if (ioctl_wr) begin
     if (ioctl_index == 8'd1 && ioctl_addr == 25'd0) ds_on <= 1'b0;
@@ -131,7 +114,7 @@ always @(posedge CLK_SYS) begin
         if (ioctl_addr == 25'd0) game_var   <= ioctl_dout;
         if (ioctl_addr == 25'd1) game_flags  <= ioctl_dout;
         if (ioctl_addr == 25'd2) game_cfg2   <= ioctl_dout;
-        if (ioctl_addr >= 25'd148 && ioctl_addr < 25'd151) col_init[ioctl_addr[1:0]] <= ioctl_dout;   // 148 -> 0
+        if (ioctl_addr >= 25'd148 && ioctl_addr < 25'd151) col_init[ioctl_addr[1:0]] <= ioctl_dout;
         if (ioctl_addr == 25'd3) game_flags2 <= ioctl_dout;
         if (ioctl_addr >= 25'd4  && ioctl_addr < 25'd12) port_idle[idle_idx] <= ioctl_dout;
         if (ioctl_addr >= 25'd12 && ioctl_addr < 25'd20) port_dip[dip_idx]   <= ioctl_dout;
@@ -144,19 +127,18 @@ wire vert_view = game_vert & ~status[12];
 
 wire [1:0] ar = status[9:8];
 
-wire        art_fb;                // artwork framebuffer on HDMI: square canvas pixels
+wire        art_fb;
 wire        art_ioctl_wait, art_avail;
 wire [11:0] art_cw, art_ch;
 assign VIDEO_ARX = (!ar) ? (art_fb ? art_cw : vert_view ? 12'd3 : 12'd4) : (ar - 1'd1);
 assign VIDEO_ARY = (!ar) ? (art_fb ? art_ch : vert_view ? 12'd4 : 12'd3) : 12'd0;
 
-// Status bit layout kept the same as the Pac-Man core
 `include "build_id.v"
 localparam CONF_STR = {
 	"EXIDY;;",
 	"P1,Video Options;",
 	"P1O89,Aspect Ratio,Original,Full screen,[ARC1],[ARC2];",
-	"P1OC,Orientation,Vert,Horz;",   // Horz turns the artwork view
+	"P1OC,Orientation,Vert,Horz;",
 	"P1OB,HDMI Flip,Off,On;",
 	"P1OM,CRT Flip,Off,On;",
 	"P1O[40:37],H Position (CRT),0,+1,+2,+3,+4,+5,+6,+7,-8,-7,-6,-5,-4,-3,-2,-1;",
@@ -171,7 +153,6 @@ localparam CONF_STR = {
 	"H1P5-,Paddle / spinner / mouse / stick;",
 	"H3P5-,Flight Stick;",
 	"H3P5O[75],Stick Mode,Flight Control,Standard Control;",
-	// Artwork options, status bits 80-89
 	"H5P5-,Artwork (layout views);",
 	"H5P5O[83:80],View,Off,View 1,View 2,View 3,View 4,View 5,View 6,View 7,View 8,View 9,View 10,View 11,View 12,View 13,View 14,View 15;",
 	"H5P5O[84],Backdrop,On,Off;",
@@ -201,7 +182,7 @@ localparam CONF_STR = {
 	"DIP;",
 	"-;",
 	"R0,Reset;",
-	"J1,Btn 1,Btn 2,Btn 3,Btn 4,Coin,Start 1P,Start 2P,Pause,Btn 5,Btn 6,Rack Test;",
+	"J1,Button 1,Button 2,Button 3,Button 4,Coin,Start 1P,Start 2P,Pause,Button 5,Button 6,Rack Test;",
 	"jn,A,B,X,Y,Select,Start,R,L;",
 	"V,v",`BUILD_DATE
 };
@@ -219,7 +200,6 @@ hps_io #(.CONF_STR(CONF_STR)) hps_io
 
 	.buttons(buttons),
 	.status(status),
-	// menumask bit 5 = artwork entries; the Game Options page also shows when the game has artwork
 	.status_menumask({~art_avail, ~(game_flags[6] | game_sf | art_avail), ~game_sf, ~ds_on, ~game_flags[6], direct_video}),
 
 	.ioctl_download(ioctl_download),
@@ -250,9 +230,7 @@ hps_io #(.CONF_STR(CONF_STR)) hps_io
 	.ps2_key(ps2_key)
 );
 
-////////////////////   CLOCKS   ///////////////////
-
-wire        CLK_2X;         // 45.156 MHz = 2 x CLK_SYS, same VCO (2:1 locked): artwork + video back end + DDRAM
+wire        CLK_2X;
 
 pll pll
 (
@@ -283,34 +261,23 @@ pll_cfg pll_cfg
 	.reconfig_from_pll(reconfig_from_pll)
 );
 
-// Hold the board in reset until the PLL is locked and the ROM download has finished
 wire reset = RESET | status[0] | buttons[1] | ioctl_download | ~locked;
 
-///////////////////         Keyboard           //////////////////
-
-// Keyboard: controllers.sv ctl_keyboard (keys act on press; paused, held keys keep tracking).
-// kb: [0] up [1] down [2] left [3] right [4] Ctrl [5] Alt [6] 1 [7] 2 [8] 5 [9] 6 [10] 9 [11] T [12] P
 wire [12:0] kb;
 /* verilator lint_off UNUSED */
 wire        kbx_unused;
 /* verilator lint_on UNUSED */
 ctl_keyboard u_kb(.clk(CLK_SYS), .ps2_key(ps2_key), .pause(pause_cpu), .kb(kb), .kbx(kbx_unused));
 
-//////////////////  Arcade Buttons/Interfaces   ///////////////////////////
-
-// Joystick bits: 0 R, 1 L, 2 D, 3 U, 4-7 Btn 1-4, 8 Coin, 9 Start 1P, 10 Start 2P, 11 Pause, 12-13 Btn 5-6, 14 Rack Test (unmapped)
-// Keyboard arrows from ctl_keyboard; 4-way restriction by ctl_joy4way.
 wire [3:0] dir1_raw = {joystick_0[3] | kb[0], joystick_0[2] | kb[1], joystick_0[1] | kb[2], joystick_0[0] | kb[3]};
 wire [3:0] dir2_raw = joystick_1[3:0];
-wire [3:0] dir1, dir2;   // {U, D, L, R}
+wire [3:0] dir1, dir2;
 
 ctl_joy4way u_j4_1(.clk(CLK_SYS), .en(game_flags[0]), .in(dir1_raw), .out(dir1));
 ctl_joy4way u_j4_2(.clk(CLK_SYS), .en(game_flags[0]), .in(dir2_raw), .out(dir2));
 
 wire m_pause = joystick_0[11] | kb[12];
 
-// Coin pulse: a press is latched, then held for exactly two frames from the next vblank.
-// ctl_coin_impulse, paused with the CPU (PAUSE_MODE 1: the frame count holds, a press made while paused is discarded).
 wire coin1_raw = joystick_0[8] | kb[8];
 wire coin2_raw = joystick_1[8] | kb[9];
 wire coin1, coin2;
@@ -319,55 +286,47 @@ ctl_coin_impulse #(.FRAMES(4'd2), .PAUSE_MODE(1)) u_coin1(.clk(CLK_SYS), .pause(
 ctl_coin_impulse #(.FRAMES(4'd2), .PAUSE_MODE(1)) u_coin2(.clk(CLK_SYS), .pause(pause_cpu), .vblank(vblank),
 	.en(game_flags[2]), .coin_raw(coin2_raw), .coin(coin2));
 
-// Rack Test cheat: held, or flipped on each press (ctl_toggle; presses ignored while paused).
 wire rack_btn = joystick_0[14] | joystick_1[14];
 wire rack_tog;
 ctl_toggle u_rack(.clk(CLK_SYS), .clear(ioctl_download), .btn(rack_btn), .pause(pause_cpu), .q(rack_tog));
 
-// Twin stick (Crazy Climber pattern): right-hand stick = right analog stick, or Btn 3-6 = R Right / Left / Down / Up
-// Right-stick directions from ctl_stick_dirs (+-48 per axis).
-wire [3:0] rstick0, rstick1;   // {U, D, L, R}
+wire [3:0] rstick0, rstick1;
 ctl_stick_dirs #(.MODE(0), .THRESH(7'd48)) u_rs0(.stick(joystick_r_analog_0), .dir(rstick0));
 ctl_stick_dirs #(.MODE(0), .THRESH(7'd48)) u_rs1(.stick(joystick_r_analog_1), .dir(rstick1));
 
-// control ids used by the MRA input map (same numbering as the Pac-Man core; 24-31 reserved for analog)
-// ids 0-35 come from ctl_ids (pad 2's Start = Start 2 only); ids 36-52 are core-local.
 wire [35:0] ids;
 ctl_ids u_ids(.joy0(joystick_0), .joy1(joystick_1), .kb(kb), .dir1(dir1), .dir2(dir2), .coin1(coin1), .coin2(coin2),
 	.coin3(joystick_2[8]), .ctl(ids));
 wire [63:0] ctl =
 {
 	11'd0,
-	joystick_3[8],                                  // 52 coin 4 (P4 coin)
-	joystick_3[6:4],                                // 51-49 P4 Btn 3-1
-	joystick_2[6:4],                                // 48-46 P3 Btn 3-1
-	joystick_1[13] | rstick1[3],                    // 45 P2 R Up    (Btn 6)
-	joystick_1[12] | rstick1[2],                    // 44 P2 R Down  (Btn 5)
-	joystick_1[7]  | rstick1[1],                    // 43 P2 R Left  (Btn 4)
-	joystick_1[6]  | rstick1[0],                    // 42 P2 R Right (Btn 3)
-	joystick_0[13] | rstick0[3],                    // 41 P1 R Up    (Btn 6)
-	joystick_0[12] | rstick0[2],                    // 40 P1 R Down  (Btn 5)
-	joystick_0[7]  | rstick0[1],                    // 39 P1 R Left  (Btn 4)
-	joystick_0[6]  | rstick0[0],                    // 38 P1 R Right (Btn 3)
-	rack_tog,                                       // 37 rack test (toggle)
-	rack_btn,                                       // 36 rack test (held)
-	ids                                             // 35-0 ctl_ids (23 coin 3 = P3 coin)
+	joystick_3[8],
+	joystick_3[6:4],
+	joystick_2[6:4],
+	joystick_1[13] | rstick1[3],
+	joystick_1[12] | rstick1[2],
+	joystick_1[7]  | rstick1[1],
+	joystick_1[6]  | rstick1[0],
+	joystick_0[13] | rstick0[3],
+	joystick_0[12] | rstick0[2],
+	joystick_0[7]  | rstick0[1],
+	joystick_0[6]  | rstick0[0],
+	rack_tog,
+	rack_btn,
+	ids
 };
 
-// DIP switches arrive from the OSD via ioctl index 254
 reg [7:0] dip_sw[8] = '{8'hFF,8'hFF,8'hFF,8'hFF,8'h00,8'h00,8'h00,8'h00};
 always @(posedge CLK_SYS) begin
 	if (ioctl_wr && (ioctl_index == 8'd254) && !ioctl_addr[24:3])
 		dip_sw[ioctl_addr[2:0]] <= ioctl_dout;
 end
 
-// MRA input map -> board input ports (registered): port_dip[p][7] = 1 takes the idle byte, else DIP byte port_dip[p][2:0]
-// bit dip_bit[]; a pressed control (id in_map[]) inverts the bit
 wire   [7:0] in_port[8];
 wire  [63:0] pm_idle, pm_sel, pm_dips, pm_ports;
 wire [511:0] pm_map;
 wire [191:0] pm_dbit;
-// genvars are declared at module scope inside generate: Quartus 17.0 rejects `for (genvar ...)` in the loop header (error 10170).
+// genvars at module scope: Quartus 17 rejects `for (genvar ...)` (error 10170)
 genvar pm_p, pm_b;
 generate
 	for (pm_p = 0; pm_p < 8; pm_p = pm_p + 1) begin : g_pm
@@ -384,7 +343,6 @@ endgenerate
 ctl_port_map #(.NP(8), .IDW(6), .BASE_MODE(2)) u_pm(.clk(CLK_SYS), .idle(pm_idle), .in_map(pm_map), .dips(32'd0),
 	.port_sel(pm_sel), .dip_bytes(pm_dips), .dip_bit(pm_dbit), .ctl(ctl), .ovr_mask(64'd0), .ovr_val(64'd0), .ports(pm_ports));
 
-// PAUSE SYSTEM
 wire [23:0] rgb_out;
 pause #(8,8,8,20) pause
 (
@@ -395,22 +353,16 @@ pause #(8,8,8,20) pause
 	.options(~status[20:19])
 );
 
-///////////////                 Video                  ////////////////
-
 wire hs, vs;
 wire [7:0] r, g, b;
-wire ce_pix;                       // CLK_2X pixel enable (art_xclk); the board's is bd_ce
-wire bd_ce;                        // board pixel enable (CLK_SYS)
+wire ce_pix;
+wire bd_ce;
 
-wire rotate_ccw = ~game_flags[7];  // ROT270 sets rotate CCW, ROT90 sets CW
+wire rotate_ccw = ~game_flags[7];
 wire no_rotate  = ~game_vert | status[12] | direct_video;
 wire flip       = status[11];
 
-// Video back end on CLK_2X (art_xclk -> artwork -> arcade_video / screen_rotate, CLK_VIDEO = CLK_2X, DDRAM_CLK = CLK_2X);
-// the board, pause, hiscore and ddr_rom stay on CLK_SYS. ddr_arb shares the DDRAM port: screen_rotate, ddr_rom (bridged
-// from CLK_SYS, Fax question ROMs) and the artwork (bursts split, lowest priority). Artwork download = ioctl index 6
-// (5 is the discrete sound program).
-wire  [7:0] av_r, av_g, av_b;      // artwork output (CLK_2X): the board picture one pixel late, artwork applied
+wire  [7:0] av_r, av_g, av_b;
 wire        av_hs, av_vs, av_hbl, av_vbl;
 wire [27:0] v_px;
 wire        a_wr;
@@ -425,9 +377,6 @@ art_xclk #(.IDX(8'd6), .VW(28)) art_xclk
 	.ioctl_wait(art_ioctl_wait), .a_wr(a_wr), .a_addr(a_addr), .a_dout(a_dout), .art_wait(art_wait)
 );
 
-// Artwork (OSD Game Options page): native composite on the core video (one pixel late), full view through the
-// DDR3 framebuffer on HDMI. CRT Flip: the board turns its picture 180 degrees through flip_fb. Every set is ROT0 and
-// the core has no Orientation entry, so turn is 0.
 wire        art_run;
 wire [31:0] art_fb_base;
 wire  [7:0] art_burstcnt, art_be;
@@ -452,7 +401,6 @@ artwork #(.IDX(8'd6)) artwork
 	.DDRAM_DIN(art_din), .DDRAM_BE(art_be), .DDRAM_WE(art_we)
 );
 assign art_fb = art_run & ~direct_video;
-
 
 wire        sr_fb_en;
 wire  [4:0] sr_fb_format;
@@ -485,8 +433,6 @@ assign FB_HEIGHT = art_fb ? art_ch      : sr_fb_h;
 assign FB_BASE   = art_fb ? art_fb_base : sr_fb_base;
 assign FB_STRIDE = art_fb ? 14'd8192    : sr_fb_stride;
 
-// Every index-0 byte is mirrored to DDR3 at 0x3C000000; Fax reads its question ROMs from there (byte port).
-// Its DDRAM port goes to ddr_arb's G port (bridged CLK_SYS -> CLK_2X).
 wire        g_busy, g_dout_ready, g_rd, g_we;
 wire [63:0] g_dout, g_din;
 wire [28:0] g_addr;
@@ -507,12 +453,9 @@ ddr_rom ddr_rom
 	.DDRAM_BE(g_be), .DDRAM_WE(g_we)
 );
 
-// DDRAM port: screen_rotate > ddr_rom > artwork at every command slot (artwork bursts split into
-// 8-beat pieces, at most 64 artwork read beats in flight, 32 while the game read ROM data from DDR3 recently)
 ddr_arb #(.CHUNK(8), .RWIN(64), .RWIN_G(32), .G_HOLD(4096), .SDEPTH(8)) ddr_arb
 (
 	.clk(CLK_2X), .clk_sys(CLK_SYS),
-	// screen_rotate's picture is not shown while the artwork framebuffer is (its writes would only take bandwidth)
 	.sr_we(sr_we & ~art_fb), .sr_addr(sr_addr), .sr_din(sr_din), .sr_be(sr_be),
 	.g_rd(g_rd), .g_we(g_we), .g_addr(g_addr), .g_din(g_din), .g_be(g_be),
 	.g_busy(g_busy), .g_dout(g_dout), .g_dout_ready(g_dout_ready),
@@ -538,10 +481,6 @@ arcade_video #(256,24) arcade_video
 	.fx(status[18:16])
 );
 
-///////////////                 Board                  ////////////////
-
-// Dials: ctl_tick (MODE 1 divider) + ctl_trackball (CW 8, D-pad step 1, X reversed), both stopped while paused
-// (counters hold, motion while paused is discarded).
 wire       ms_ev;
 wire [9:0] ms_dx;
 /* verilator lint_off UNUSED */
@@ -550,8 +489,6 @@ wire [2:0] ms_btn;
 /* verilator lint_on UNUSED */
 ctl_mouse u_ms(.clk(CLK_SYS), .ps2_mouse(ps2_mouse), .ev(ms_ev), .dx(ms_dx), .dy(ms_dy), .btn(ms_btn));
 
-// Teeter Torture dial: spinner, mouse X, P1 D-pad left / right; D-pad one unit every 1/120 s (Car Polo 1/300 s)
-// (clockwise / right counts down)
 wire       dial_tick1, dial_tick2;
 ctl_tick #(.MODE(1), .DW(18)) u_dt1(.clk(CLK_SYS), .pause(pause_cpu), .vblank(1'b0),
 	.period(game_cp ? 18'd75259 : 18'd188149), .tick(dial_tick1));
@@ -566,7 +503,6 @@ ctl_trackball #(.CW(8), .OUT_W(8), .DPAD_STEP(1)) u_dial1(.clk(CLK_SYS), .reset(
 	.quad_ce(2'b00), .quad_dir(2'b00), .tick(dial_tick1), .stick_en(1'b1), .stick(16'd0), .dpad({2'b00, dir1_raw[1:0]}),
 	.x(dial_pos), .y(dial_y1), .dir(dial_dir1));
 
-// Car Polo steering wheels P2-P4: spinner or D-pad left / right
 wire [7:0] dial_p2, dial_p3, dial_p4;
 ctl_trackball #(.CW(8), .OUT_W(8), .DPAD_STEP(1)) u_dial2(.clk(CLK_SYS), .reset(reset), .pause(pause_cpu), .rev(2'b01),
 	.unit_sh(2'd0), .base_sh(4'd0), .speed(2'd0), .mouse_ev(1'b0), .mouse_dx(10'd0), .mouse_dy(10'd0), .spinner(spinner_1),
@@ -581,11 +517,9 @@ ctl_trackball #(.CW(8), .OUT_W(8), .DPAD_STEP(1)) u_dial4(.clk(CLK_SYS), .reset(
 	.quad_ce(2'b00), .quad_dir(2'b00), .tick(dial_tick2), .stick_en(1'b1), .stick(16'd0), .dpad({2'b00, joystick_3[1:0]}),
 	.x(dial_p4), .y(dial_y4), .dir(dial_dir4));
 
-// Circus-family paddle: MiSTer paddle, left stick X, spinner, mouse X, P1 D-pad left / right
 wire [7:0] paddle_pos;
 wire       pad_rev  = game_flags[5] ^ status[61];
 wire [2:0] pad_sens = status[60:58];
-// ctl_paddle (PAUSE_MODE 1): the position holds while paused and jumps to the knob on resume if it was turned.
 wire pad_tick;
 ctl_tick #(.MODE(0)) u_pt(.clk(CLK_SYS), .pause(pause_cpu), .vblank(vblank), .period(18'd0), .tick(pad_tick));
 ctl_paddle #(.PMIN(8'd64), .PMAX(8'd167), .PCEN(8'd115), .PAUSE_MODE(1)) u_paddle
@@ -595,14 +529,10 @@ ctl_paddle #(.PMIN(8'd64), .PMAX(8'd167), .PCEN(8'd115), .PAUSE_MODE(1)) u_paddl
 	.left(dir1_raw[1]), .right(dir1_raw[0]), .pos(paddle_pos)
 );
 
-// Star Fire stick (left analog / D-pad) and throttle (right analog Y / Btn 2 more, Btn 3 less)
 wire [7:0] sf_x, sf_y, sf_z;
-// ctl_ad_stick: stick centre 0x80, key delta 10 per frame,
-// autocentre by the same amount; Y reversed in Flight Control; Z throttle reversed and held (no autocentre).
-// Holds while paused.
 wire [7:0] sf_ay  = joystick_l_analog_0[15:8];
 wire [7:0] sf_ry  = joystick_r_analog_0[15:8];
-wire       sf_std = status[75];                  // 1 = Standard Control (Y not reversed)
+wire       sf_std = status[75];
 ctl_ad_stick #(.DZ(7'd16)) u_sf_x(.clk(CLK_SYS), .reset(reset), .pause(pause_cpu), .tick(pad_tick),
 	.rest(8'h80), .lo(8'h00), .hi(8'hFF), .keyd(8'd10), .stick(joystick_l_analog_0[7:0]),
 	.inc(dir1_raw[0]), .dec(dir1_raw[1]), .val(sf_x));
@@ -613,7 +543,6 @@ ctl_ad_stick #(.DZ(7'd16), .HOLD(1'b1)) u_sf_z(.clk(CLK_SYS), .reset(reset), .pa
 	.rest(8'h80), .lo(8'h00), .hi(8'hFF), .keyd(8'd10), .stick(8'd0 - sf_ry),
 	.inc(joystick_0[5]), .dec(joystick_0[6]), .val(sf_z));
 
-// Fire One paddles 0-63: P1 paddle / left stick X / spinner / mouse / D-pad, P2 paddle / stick / spinner / D-pad
 wire [7:0] fo_p1, fo_p2;
 ctl_paddle #(.PMIN(8'd0), .PMAX(8'd63), .PCEN(8'd32), .PAUSE_MODE(1)) fo_paddle1
 (
@@ -700,7 +629,6 @@ exidy_dispatcher board
 	.q_byte_rdy(ddr_byte_rdy)
 );
 
-// Hiscore: config = MRA index 3, dump = index 4; RAM via the board's second port while the CPU is paused
 wire [15:0] hs_address;
 wire  [7:0] hs_data_in;
 wire  [7:0] hs_data_out;
@@ -710,7 +638,6 @@ wire        hs_access_write;
 wire        hs_pause;
 wire        hs_configured;
 
-// Victory keeps its CMOS RAM in the NVRAM slot (index 4) that hiscore sets use for their dumps
 wire        game_vic = (game_var == 8'd10);
 wire  [7:0] nv_dout, hs_to_hps;
 wire        nv_dirty, hs_upload_req;
@@ -741,4 +668,3 @@ hiscore #(
 );
 
 endmodule
-
