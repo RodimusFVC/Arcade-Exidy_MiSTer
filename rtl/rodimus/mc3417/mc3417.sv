@@ -1,4 +1,6 @@
-//  Based on MAME hc55516.cpp (Aaron Giles, Jonathan Gevaryahu, BSD-3-Clause)
+//  SPDX-License-Identifier: BSD-3-Clause
+//  Based on MAME src/devices/sound/hc55516.cpp (license:BSD-3-Clause, copyright-holders: Aaron Giles, Jonathan Gevaryahu)
+//  Copyright (C) 2026 Rodimus
 
 module mc3417
 (

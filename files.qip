@@ -27,13 +27,13 @@ set_global_assignment -name SYSTEMVERILOG_FILE rtl/boards/exidy_gen1_sound/exidy
 
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/rodimus/pia6821/pia6821.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/rodimus/riot6532/riot6532.sv
-set_global_assignment -name SYSTEMVERILOG_FILE rtl/sound/pit8253.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/rodimus/pit8253/pit8253.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/rodimus/tms5220/tms5220.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/rodimus/tms5220/tms5220_rsws.sv
 set_global_assignment -name SEARCH_PATH rtl/rodimus/tms5220
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/rodimus/dsnd_engine/dsnd_engine.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/rodimus/ptm6840/ptm6840.sv
-set_global_assignment -name SYSTEMVERILOG_FILE rtl/sound/mc3417.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/rodimus/mc3417/mc3417.sv
 
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/rodimus/t65sv/t65sv_all.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/rodimus/t80sv/t80sv_all.sv

@@ -47,7 +47,11 @@
         <part crc="059efab5" name="vic1.7c"/>
         <part crc="82c4767c" name="vic1.7d"/>
         <part crc="a19be034" name="vic1.7e"/>
-        <part repeat="0x7000">00</part>
+        <part crc="5e415084" name="j1.rom"/>
+        <part crc="3f327dff" name="k1.rom"/>
+        <part crc="6c82ebca" name="kl1.rom"/>
+        <part crc="03b89d8a" name="l1.rom"/>
+        <part repeat="0x3000">00</part>
         <part crc="b2c75dee" name="hsc17l"/>
         <part crc="a107c4f5" name="hsc13e"/>
         <part crc="5f06ad26" name="hsc16a"/>
@@ -56,11 +60,6 @@
         <part crc="09c4dbf6" name="hsc19d"/>
         <part crc="ce1464f4" name="hsc19e"/>
         <part crc="5fb6b158" name="3j"/>
-        <part repeat="0x28E20">00</part>
-        <part crc="5e415084" name="j1.rom"/>
-        <part crc="3f327dff" name="k1.rom"/>
-        <part crc="6c82ebca" name="kl1.rom"/>
-        <part crc="03b89d8a" name="l1.rom"/>
     </rom>
 
     <!-- Index 1: Config -->

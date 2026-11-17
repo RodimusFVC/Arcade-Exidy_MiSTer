@@ -5,6 +5,9 @@
 //
 //  clk = CLK_2X (39.312 MHz), clk_sys = CLK_SYS (19.656 MHz): same PLL VCO, rising edges aligned 2:1, so every
 //  crossing below is a plain register path that STA times (sys_top.sdc groups the core PLL's outputs).
+//  SAME_CLK = 1: clk and clk_sys are the same clock (cores whose CLK_SYS is already fast enough for the DDRAM port, or
+//  whose PLL cannot give a 2x clock). G then takes a command on any edge where it did not take one on the previous
+//  edge (BUSY low for one clock = accepted), and its read data is handed back one clock after the DDRAM beat.
 //
 //  Clients, fixed priority at each command slot:
 //    S  screen_rotate (clk): single-beat writes, ignores BUSY -> SDEPTH-deep FIFO (full: newest replaces the last entry)
@@ -23,7 +26,8 @@
 //
 //============================================================================
 
-module ddr_arb #(parameter int CHUNK  = 8,      // artwork sub-burst length (beats)
+module ddr_arb #(parameter bit SAME_CLK = 1'b0, // 1: clk_sys is clk (see above)
+                 parameter int CHUNK  = 8,      // artwork sub-burst length (beats)
                  parameter int RWIN   = 64,     // artwork read beats in flight at most (>= CHUNK)
                  parameter int RWIN_G = 32,     // ... while the game reads (>= CHUNK)
                  parameter int G_HOLD = 4096,   // clocks after a game read that count as "the game reads" (~104 us)
@@ -74,10 +78,11 @@ module ddr_arb #(parameter int CHUNK  = 8,      // artwork sub-burst length (bea
 // ------------------------------------------------------------------ clk_sys phase
 // tog flips on every clk_sys edge; on clk it differs from its 1-clock delay exactly in the clk cycle that starts at a
 // clk_sys edge, so the clk edge with mid = 1 is the one in the middle of a clk_sys cycle.
+// SAME_CLK: every clk edge is a clk_sys edge, so every edge counts as mid.
 reg  tog = 1'b0, tog_q = 1'b0;
 always @(posedge clk_sys) tog <= ~tog;
 always @(posedge clk) tog_q <= tog;
-wire mid = tog != tog_q;
+wire mid = SAME_CLK ? 1'b1 : (tog != tog_q);
 
 // ------------------------------------------------------------------ command slot (S, G, A reads)
 reg         c_rd = 1'b0, c_we = 1'b0;
@@ -215,7 +220,8 @@ always @(posedge clk) begin
     // ---- G: take ddr_rom's command on the mid edge (ddr_rom sees BUSY low at the next clk_sys edge)
     if (mid) begin
         g_busy <= 1'b1;
-        if ((g_rd || g_we) && (!gq_v || g_iss)) begin
+        // SAME_CLK: ddr_rom still holds the command it saw accepted (BUSY low) in the clock after the take
+        if ((g_rd || g_we) && (!gq_v || g_iss) && (!SAME_CLK || g_busy)) begin
             gq_v <= 1'b1; gq_rd <= g_rd; gq_a <= g_addr; gq_d <= g_din; gq_b <= g_be;
             g_busy <= 1'b0;
         end

@@ -144,7 +144,7 @@ dpram_dc #(.widthad_a(11)) rom_spr
 //   rom_cp0,  2K at 0x15800: Circus-family character PROM (port B) | Car Polo goal ROM, first 256 B (ports A and B)
 //   rom_cp1,  1K at 0x16000: Circus-family line PROMs 4D / 5D (port B) | Car Polo alphanumeric ROM, first 512 B (port A)
 //   rom_snd, 16K at 0x0C000: sound board 6502 ROM (CPU 4000-7FFF)
-//   rom_cvsd, 16K at 0x10000: Mouse Trap CVSD Z80 ROM; also 0x40000: Victory main ROM 8000-BFFF (same pooled Z80)
+//   rom_cvsd, 16K at 0x10000: Mouse Trap CVSD Z80 ROM | Victory main ROM 8000-BFFF (same pooled Z80)
 logic [10:0] c_chr_a;
 logic  [9:0] c_lp_a;
 logic  [7:0] p_goal_sa, p_goal_ca;
@@ -154,7 +154,7 @@ logic  [7:0] rom_cp0_qa, rom_cp0_qb, rom_cp1_qa, rom_cp1_qb, rom_snd_q, rom_cvsd
 wire load_cp0  = ioctl_wr0 && ioctl_addr[24:11] == 14'h2B;
 wire load_cp1  = ioctl_wr0 && ioctl_addr[24:10] == 15'h58;
 wire load_snd  = ioctl_wr0 && ioctl_addr[24:14] == 11'd3;
-wire load_cvsd = ioctl_wr0 && (ioctl_addr[24:14] == 11'd4 || ioctl_addr[24:14] == 11'h010);
+wire load_cvsd = ioctl_wr0 && ioctl_addr[24:14] == 11'd4;
 
 dpram_dc #(.widthad_a(11)) rom_cp0
 (
@@ -242,8 +242,8 @@ endgenerate
 
 pit8253 pit8253_0
 (
-    .clk(clk), .rst(pit8253_0_i.rst), .wr_en(pit8253_0_i.wr_en), .a(pit8253_0_i.a), .din(pit8253_0_i.din),
-    .clk_ce(pit8253_0_i.clk_ce), .gate(pit8253_0_i.gate), .out(pit8253_0_o.out)
+    .clk(clk), .rst(pit8253_0_i.rst), .cs(1'b1), .wr(pit8253_0_i.wr_en), .rd(1'b0), .a(pit8253_0_i.a), .din(pit8253_0_i.din), .dout(),
+    .clk_ce({3{pit8253_0_i.clk_ce}}), .gate(pit8253_0_i.gate), .out(pit8253_0_o.out)
 );
 
 riot6532 riot6532_0
@@ -295,7 +295,6 @@ always_ff @(posedge clk)
 
 logic [17:0] qrom_a;
 logic  [7:0] qrom_d, q0_d, q1_d;
-wire load_q1 = ioctl_wr0 && ioctl_addr[24:14] == 11'h010;
 
 logic       fga_hi = 1'b0, fgb_hi = 1'b0;
 always_ff @(posedge clk) begin
@@ -355,7 +354,6 @@ endgenerate
 
 logic [7:0] z_rom_q;
 assign q1_d = z_rom_q;
-wire unused_q1 = &{1'b0, load_q1};
 
 wire q_unpop = qrom_a[17:16] == 2'b11;
 wire q_read  = !(circus || sf || vic || cp) && board_cfg[6] && m_rw && m_a[15:13] == 3'b001 && !q_unpop;
